@@ -75,7 +75,7 @@ spec:
 
 ### Source
 
-`sourceRef` has the same shape as Flux source references: `kind`, `name`, and optional `namespace`.
+`sourceRef` uses the Flux `NamespacedObjectKindReference` type: `kind`, `name`, and optional `namespace` and `apiVersion`.
 Only `GitRepository` is supported in v1.
 `OCIRepository` and `Bucket` publish artifacts the same way, so we can add them later without changing the API.
 
@@ -136,6 +136,20 @@ That one format works for GHCR, Docker Hub, and in-cluster registries.
 
 - `Replace` (default): cancel the running build and start the new one.
 - `Wait`: let the running build finish, then build the latest state and skip any revisions in between.
+
+### Validation
+
+The API server rejects invalid objects with CEL rules in the CRD:
+
+- `dockerfile` must set exactly one of `path` or `inline`.
+- `sourceRef` is required when `dockerfile.path` is set, `sourceRef.kind` must be `GitRepository`, and `sourceRef.name` must not be empty.
+- `dockerfile.path` and `context` must be relative and must not contain `..`.
+- `push.image` must not include a tag or digest, and `push.secretRef.name` must not be empty.
+- `concurrencyPolicy` must be `Replace` or `Wait`.
+- `interval` and `rebuildInterval` must be Go durations, and the Job limits must not be negative.
+
+The schema sets every default in the example except `push.tags`.
+The controller applies the default tags, because they depend on whether the build has a source.
 
 ### Flux conventions
 

@@ -1,0 +1,35 @@
+apiVersion: build.fluxcd.leightweight.io/v1alpha1
+kind: ImageBuild
+metadata:
+  labels:
+    app.kubernetes.io/name: image-build-controller
+    app.kubernetes.io/managed-by: kustomize
+  name: imagebuild-sample
+spec:
+  sourceRef:
+    kind: GitRepository
+    name: foo
+    namespace: flux-system
+  dockerfile:
+    path: Dockerfile
+  context: ./subdir
+  buildArgs:
+    KEY: value
+  target: runtime
+  push:
+    image: registry.example/foo/bar
+    tags:
+      - '{{ .Branch }}-{{ .ShortSHA }}-{{ .Timestamp }}'
+    secretRef:
+      name: regcreds
+    insecure: false
+  cache:
+    enabled: true
+  concurrencyPolicy: Replace
+  rebuildInterval: 168h
+  userNamespaces: false
+  backoffLimit: 2
+  successfulBuildsHistoryLimit: 1
+  failedBuildsHistoryLimit: 3
+  interval: 10m
+  suspend: false

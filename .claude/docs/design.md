@@ -462,6 +462,8 @@ GitHub Actions runs:
 The end-to-end test installs Flux source-controller, a Gitea server, and a plain HTTP registry in the kind cluster.
 It commits a Dockerfile to a Gitea repository and points a `GitRepository` at it.
 It also applies the source-controller NetworkPolicy that the Helm chart will offer, and keeps Flux's default policies, so build pods download artifacts through it.
+On hosts with DMI data, such as GitHub's runners, kind bind-mounts files over `/sys/devices/virtual/dmi/id` in each node.
+The kernel refuses new sysfs mounts in user namespaces while part of `/sys` is hidden, so `mise run test:e2e` removes those mounts after it creates the cluster.
 Its specs check that:
 
 - a `dockerfile.path` build pushes the default branch tag, and the registry serves the digest in `status.latestImage`;

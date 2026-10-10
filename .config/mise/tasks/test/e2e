@@ -12,6 +12,17 @@ else
   kind create cluster --name "$cluster"
 fi
 
+# On hosts with DMI data, such as GitHub's runners, kind bind-mounts files over /sys/devices/virtual/dmi/id in each node.
+# The kernel refuses new sysfs mounts in user namespaces while part of /sys is hidden, so build pods couldn't start.
+# The files only give each node a unique system UUID, which the kubelet already read at startup.
+for node in $(kind get nodes --name "$cluster"); do
+  docker exec "$node" sh -c '
+    for file in /sys/devices/virtual/dmi/id/product_name /sys/devices/virtual/dmi/id/product_uuid; do
+      while findmnt --mountpoint "$file" >/dev/null; do umount "$file"; done
+    done
+  '
+done
+
 status=0
 KIND_CLUSTER="$cluster" go test -tags=e2e ./test/e2e/ -v -ginkgo.v || status=$?
 

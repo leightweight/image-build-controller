@@ -62,7 +62,7 @@ spec:
     enabled: true
   concurrencyPolicy: Replace
   rebuildInterval: 168h
-  userNamespaces: false
+  userNamespaces: true
   resources: {}
   nodeSelector: {}
   tolerations: []
@@ -127,7 +127,8 @@ That one format works for GHCR, Docker Hub, and in-cluster registries.
 - `target`: the multi-stage build target.
 - `cache.enabled`: defaults to true and stores the registry cache at `<image>:buildcache` with the push credentials.
 - `resources`, `nodeSelector`, and `tolerations`: applied to the build pod.
-- `userNamespaces`: off by default and sets `hostUsers: false` on the build pod when enabled.
+- `userNamespaces`: sets `hostUsers: false` on the build pod when true.
+  When unset, the controller's `--default-user-namespaces` flag decides, and that flag defaults to true.
   See [User namespaces](#user-namespaces).
 
 ### Concurrency
@@ -262,7 +263,7 @@ Build pods have these restrictions:
 If a build escapes its container, it lands on the node as an unprivileged user.
 It does not remove the `privileged` Pod Security requirement.
 It requires Kubernetes 1.33 or later, Linux 6.3 or later, and containerd 2.0 or later or CRI-O on the nodes.
-It is off by default, and a controller flag changes the default.
+It is on by default, and the `--default-user-namespaces` controller flag changes the default.
 Support depends on a test confirming that rootless BuildKit works inside a user namespace, possibly with `--oci-worker-no-process-sandbox`.
 If it doesn't work, we drop the field and document why.
 
@@ -287,7 +288,7 @@ Build pods mount the registry Secret directly.
 ### Controller flags
 
 - The default BuildKit image.
-- The default for `userNamespaces`.
+- `--default-user-namespaces`, the default for `userNamespaces`, which is true.
 - Restricting the controller to a single namespace.
 - `--no-cross-namespace-refs`, which rejects `sourceRef`s in other namespaces, as Flux does.
 - An optional notification-controller events address.

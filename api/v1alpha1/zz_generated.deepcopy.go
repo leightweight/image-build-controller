@@ -183,6 +183,11 @@ func (in *ImageBuildSpec) DeepCopyInto(out *ImageBuildSpec) {
 		*out = new(v1.Duration)
 		**out = **in
 	}
+	if in.UserNamespaces != nil {
+		in, out := &in.UserNamespaces, &out.UserNamespaces
+		*out = new(bool)
+		**out = **in
+	}
 	if in.Resources != nil {
 		in, out := &in.Resources, &out.Resources
 		*out = new(corev1.ResourceRequirements)

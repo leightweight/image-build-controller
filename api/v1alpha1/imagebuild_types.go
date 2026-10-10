@@ -116,9 +116,10 @@ type ImageBuildSpec struct {
 	RebuildInterval *metav1.Duration `json:"rebuildInterval,omitempty"`
 
 	// userNamespaces runs the build pod with hostUsers set to false, so container users map to unprivileged host users.
-	// The nodes must support user namespaces.
+	// When unset, the controller's --default-user-namespaces flag decides, and that flag defaults to true.
+	// Nodes need Kubernetes 1.33 or later, Linux 6.3 or later, and containerd 2.0 or later or CRI-O.
 	// +optional
-	UserNamespaces bool `json:"userNamespaces,omitempty"`
+	UserNamespaces *bool `json:"userNamespaces,omitempty"`
 
 	// resources sets the compute resources of the build container.
 	// +optional

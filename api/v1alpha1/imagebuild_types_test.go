@@ -80,7 +80,8 @@ var _ = Describe("ImageBuild API", func() {
 			Expect(got.Spec.FailedBuildsHistoryLimit).To(Equal(ptr.To[int32](3)))
 			Expect(got.Spec.Interval.Duration).To(Equal(10 * time.Minute))
 			Expect(got.Spec.RebuildInterval).To(BeNil())
-			Expect(got.Spec.UserNamespaces).To(BeFalse())
+			// The controller's --default-user-namespaces flag applies when the field is unset.
+			Expect(got.Spec.UserNamespaces).To(BeNil())
 			Expect(got.Spec.Suspend).To(BeFalse())
 			Expect(got.Spec.Push.Insecure).To(BeFalse())
 			// The controller applies the default tag, because it depends on whether the build has a source.
@@ -90,12 +91,14 @@ var _ = Describe("ImageBuild API", func() {
 		It("keeps explicit false and zero values instead of replacing them with defaults", func() {
 			ib := newImageBuild()
 			ib.Spec.Cache.Enabled = new(false)
+			ib.Spec.UserNamespaces = new(false)
 			ib.Spec.BackoffLimit = ptr.To[int32](0)
 			ib.Spec.SuccessfulBuildsHistoryLimit = ptr.To[int32](0)
 			ib.Spec.FailedBuildsHistoryLimit = ptr.To[int32](0)
 			got := createAndGet(ib)
 
 			Expect(got.Spec.Cache.Enabled).To(Equal(new(false)))
+			Expect(got.Spec.UserNamespaces).To(Equal(new(false)))
 			Expect(got.Spec.BackoffLimit).To(Equal(ptr.To[int32](0)))
 			Expect(got.Spec.SuccessfulBuildsHistoryLimit).To(Equal(ptr.To[int32](0)))
 			Expect(got.Spec.FailedBuildsHistoryLimit).To(Equal(ptr.To[int32](0)))
@@ -111,7 +114,7 @@ var _ = Describe("ImageBuild API", func() {
 			ib.Spec.Push.Insecure = true
 			ib.Spec.ConcurrencyPolicy = buildv1alpha1.WaitConcurrency
 			ib.Spec.RebuildInterval = &metav1.Duration{Duration: 168 * time.Hour}
-			ib.Spec.UserNamespaces = true
+			ib.Spec.UserNamespaces = new(true)
 			ib.Spec.NodeSelector = map[string]string{"kubernetes.io/arch": "amd64"}
 			ib.Spec.Interval = metav1.Duration{Duration: time.Hour}
 			ib.Spec.Suspend = true

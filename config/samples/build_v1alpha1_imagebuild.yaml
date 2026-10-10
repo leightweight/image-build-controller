@@ -27,7 +27,7 @@ spec:
     enabled: true
   concurrencyPolicy: Replace
   rebuildInterval: 168h
-  userNamespaces: false
+  userNamespaces: true
   backoffLimit: 2
   successfulBuildsHistoryLimit: 1
   failedBuildsHistoryLimit: 3

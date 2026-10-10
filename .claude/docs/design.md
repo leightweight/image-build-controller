@@ -99,12 +99,25 @@ Template variables:
 - `.Branch`: the branch from the source revision, if any.
 - `.Tag`: the git tag from the source revision, if any.
 - `.SHA`: the full commit SHA.
-- `.ShortSHA`: the abbreviated commit SHA.
+- `.ShortSHA`: the first 7 characters of the commit SHA.
 - `.Timestamp`: Unix time when the build started.
 - `.Generation`: the `ImageBuild` generation.
 
-The default tag is `{{ .Branch }}-{{ .ShortSHA }}-{{ .Timestamp }}`.
-The default tag without a source is `build-{{ .Timestamp }}`.
+Flux revisions such as `main@sha1:<sha>` don't say whether their name is a branch or a tag.
+The controller treats the name as a tag when the `GitRepository` sets `spec.ref.tag` or `spec.ref.semver`, and as a branch otherwise.
+Full references are unambiguous: `refs/heads/<name>` is a branch, `refs/tags/<name>` is a tag, and other references such as `refs/pull/1/head` act as branches named without the `refs/` prefix.
+
+`.Branch` and `.Tag` replace every character that can't appear in an image tag with `-`, so the branch `feature/login` becomes `feature-login`.
+Every rendered tag must match the OCI tag grammar, `[A-Za-z0-9_][A-Za-z0-9._-]{0,127}`, or the build fails before it starts.
+A template that uses an unknown field also fails.
+Duplicate tags are pushed once.
+
+When `push.tags` is empty, the default tag depends on the source revision:
+
+- with a branch: `{{ .Branch }}-{{ .ShortSHA }}-{{ .Timestamp }}`;
+- with a tag: `{{ .Tag }}-{{ .ShortSHA }}-{{ .Timestamp }}`;
+- with only a commit: `{{ .ShortSHA }}-{{ .Timestamp }}`;
+- without a source: `build-{{ .Timestamp }}`.
 
 A Flux `ImagePolicy` like this one selects the newest default tag:
 
@@ -194,12 +207,22 @@ status:
 
 ### Build key
 
-The controller computes a build key as a hash of:
+The controller computes a build key as the SHA-256 hash of these inputs, encoded as JSON with sorted map keys:
 
 - the source artifact digest;
-- every spec field that affects the produced image;
+- `dockerfile.path` or `dockerfile.inline`;
+- `context`, only when the build has a source;
+- `buildArgs`;
+- `target`;
+- `push.image`, the `push.tags` templates, `push.secretRef.name`, and `push.insecure`;
 - the `reconcile.fluxcd.io/requestedAt` value;
-- the current `rebuildInterval` period, if set.
+- the current `rebuildInterval` period, `floor(now / rebuildInterval)`, if set.
+
+The key leaves out settings that only change how a build runs: `cache`, `userNamespaces`, `resources`, `nodeSelector`, `tolerations`, `backoffLimit`, the history limits, `concurrencyPolicy`, `interval`, and `suspend`.
+After changing one of those to fix a failed build, set the `requestedAt` annotation to retry it.
+
+The key uses the artifact digest instead of the revision, so a commit that doesn't change the artifact doesn't rebuild.
+The inputs include a version number, which changes whenever the list of inputs changes, so each `ImageBuild` rebuilds once after such an upgrade.
 
 The controller starts a build only when the build key differs from the last recorded one.
 Controller restarts, resyncs, and changes to `interval` or `suspend` never trigger rebuilds.
@@ -217,20 +240,56 @@ Like the Flux controllers, the controller builds from the source's last artifact
 
 ### Build Job
 
-Each build is a Job in the `ImageBuild` namespace, owned by the `ImageBuild`.
-The Job name is `<name>-<build key prefix>`, truncated to fit Kubernetes name limits.
+Each build is a Job in the `ImageBuild` namespace, with a controller owner reference to the `ImageBuild`.
+The Job name is `<name>-<first 10 characters of the build key>`.
+The `ImageBuild` name is shortened so the whole Job name fits in 63 characters, because the Job controller uses the name as a label value, and dots become hyphens so pod hostnames stay valid.
 After a restart, the controller finds and adopts an existing Job for the current build key instead of creating a duplicate.
 
-The pod has two containers:
+The Job and its pods carry the `app.kubernetes.io/managed-by: image-build-controller` label.
+The Job also carries these annotations:
 
-1. An init container that runs the controller image as `manager fetch --url <url> --digest <digest> --dest <dir>`.
+- `build.fluxcd.leightweight.io/build-key`: the full build key;
+- `build.fluxcd.leightweight.io/source-revision`: the source revision, for builds with a source;
+- `build.fluxcd.leightweight.io/tags`: the comma-separated tags the build pushes.
+
+The pod has up to two containers:
+
+1. For builds with a source, an init container that runs the controller image as `manager fetch --url <url> --digest <digest> --dest /workspace/context`.
    It uses `fluxcd/pkg/http/fetch` to download the Flux source artifact, verify its digest, and extract it into an `emptyDir` volume.
    It retries a failed download 9 times by default, like the Flux controllers, and skips symlinks in the artifact.
-   For builds with user namespaces, it also writes the `subuid` and `subgid` files described in [User namespaces](#user-namespaces).
+   It runs with the default seccomp profile, a read-only root filesystem, no capabilities, and an `emptyDir` at `/tmp`.
 2. A build container that runs rootless BuildKit in daemonless mode with `buildctl-daemonless.sh`.
    It builds from the extracted context and pushes to the registry.
 
+Builds without a source skip the init container and build from an empty `emptyDir`.
+An inline Dockerfile reaches the build container through the downward API: the pod template has the Dockerfile in its `build.fluxcd.leightweight.io/dockerfile` annotation, and a `downwardAPI` volume turns the annotation into a file.
+That needs no ConfigMap and no extra controller permissions.
+
+The build container runs:
+
+```sh
+buildctl build --frontend dockerfile.v0 \
+  --local context=/workspace/context/<context> --local dockerfile=<dir> --opt filename=<file> \
+  [--opt target=<target>] [--opt build-arg:<name>=<value> ...] \
+  --output 'type=image,"name=<image>:<tag>,<image>:<tag>",push=true[,registry.insecure=true]' \
+  [--export-cache type=registry,ref=<image>:buildcache[,registry.insecure=true],mode=max \
+   --import-cache type=registry,ref=<image>:buildcache[,registry.insecure=true]]
+```
+
+Build args are sorted by name, so the same `ImageBuild` always gives the same arguments.
+With `push.secretRef`, the Secret's `.dockerconfigjson` key is mounted as `config.json` in the directory that `DOCKER_CONFIG` points to.
+
 A controller flag sets the BuildKit image, and each controller release pins a default.
+
+### Image digest
+
+The build container reports the pushed image's digest through its termination message, so the controller doesn't need to read logs or query the registry.
+A short `sh` script runs `buildctl` with `--metadata-file /workspace/output/metadata.json`, copies `containerimage.digest` out of that file, and writes it to `/dev/termination-log`.
+`buildctl` can't write the metadata file to `/dev/termination-log` directly, because it writes with a temporary file and a rename.
+
+On success, the termination message is exactly the digest, such as `sha256:...`.
+On failure, the script writes nothing, so `FallbackToLogsOnError` makes Kubernetes use the tail of the build log instead.
+The container's exit code tells the two apart.
 
 ### Failure handling
 
@@ -250,6 +309,7 @@ The Job's pod template carries the `build.fluxcd.leightweight.io/termination-mes
 
 1. The controller watches build pods through their `app.kubernetes.io/managed-by: image-build-controller` label.
 2. When a build pod terminates, the controller copies its termination message into the `ImageBuild` status, the condition message, and an Event.
+   The message is the [image digest](#image-digest) after a successful build and the tail of the build log after a failed one.
 3. The controller then removes the finalizer.
 
 The controller also removes the finalizer from pods of Jobs that are being deleted, so history cleanup and `ImageBuild` deletion don't leave pods stuck.
@@ -300,9 +360,12 @@ The install docs must call out the default and the node requirements.
 
 A user-namespaced pod has exactly 65536 user IDs.
 The rootless BuildKit image's `/etc/subuid` and `/etc/subgid` start at 100000, outside that range, so rootlesskit fails to map its IDs.
-The init container writes replacements containing `user:1001:64535` into a shared `emptyDir`, and the build container mounts them over `/etc/subuid` and `/etc/subgid` with `subPath`.
+The pod template carries replacements containing `user:1001:64535` in its `build.fluxcd.leightweight.io/subids` annotation.
+A `downwardAPI` volume turns the annotation into `subuid` and `subgid` files, and the build container mounts them over `/etc/subuid` and `/etc/subgid` with `subPath`.
+That works the same for builds with and without a source, so no init container is needed for it.
 
 This setup built an image successfully on kind and on Talos 1.13 with Kubernetes 1.36, Linux 6.18, and containerd 2.2.
+The rendered build Jobs also built and pushed images on kind with Kubernetes 1.37, with and without user namespaces, with and without a source.
 
 ### Network access to source-controller
 

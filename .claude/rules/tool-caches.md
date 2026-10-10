@@ -11,5 +11,6 @@ The `_.path` setting in `.config/mise/config.toml` adds `bin/` to `PATH`, so tas
 Install tools through mise `[tools]` whenever a backend supports them.
 Only put a binary in `bin/` when mise can't install it, such as the custom golangci-lint build, or when the project builds it.
 
-`.cache/` and `bin/` are the only gitignored folders.
+`.cache/` and `bin/` are the only gitignored tool folders.
+`.claude/worktrees/` is also ignored, because background agents create git worktrees there.
 If a new tool can't use them, ask the user instead of adding another ignore entry.

@@ -212,7 +212,8 @@ The controller does not check whether the image still exists in the registry.
 - The `reconcile.fluxcd.io/requestedAt` annotation changes.
 - `rebuildInterval` elapses, so the image picks up base image security patches.
 
-If the source is not ready, the `ImageBuild` reports `Ready=False` and waits.
+If the source doesn't exist or has no artifact yet, the `ImageBuild` reports `Ready=False` with reason `SourceNotReady` and waits.
+Like the Flux controllers, the controller builds from the source's last artifact even when its latest fetch failed.
 
 ### Build Job
 

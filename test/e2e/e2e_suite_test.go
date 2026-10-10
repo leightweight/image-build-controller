@@ -64,6 +64,12 @@ var _ = BeforeSuite(func() {
 
 	configureKubectlKubeRC()
 	setupCertManager()
+
+	// The controller watches GitRepository objects, so the cluster needs Flux's CRD.
+	By("installing the Flux GitRepository CRD")
+	cmd = exec.Command("kubectl", "apply", "-f", "internal/controller/testdata/crds/")
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to install the GitRepository CRD")
 })
 
 var _ = AfterSuite(func() {

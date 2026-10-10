@@ -26,6 +26,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"github.com/go-logr/logr"
+	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -35,6 +36,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	"github.com/fluxcd/pkg/runtime/acl"
+	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 
 	buildv1alpha1 "github.com/leightweight/image-build-controller/api/v1alpha1"
 	"github.com/leightweight/image-build-controller/internal/controller"
@@ -50,6 +54,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
+	utilruntime.Must(sourcev1.AddToScheme(scheme))
 	utilruntime.Must(buildv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
@@ -94,7 +99,11 @@ func main() {
 		Development: true,
 	}
 	opts.BindFlags(flag.CommandLine)
-	flag.Parse()
+	// Flux's flag helpers use pflag, so parse the standard flags through pflag too.
+	var aclOptions acl.Options
+	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
+	aclOptions.BindFlags(pflag.CommandLine)
+	pflag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
@@ -190,10 +199,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	ctx := ctrl.SetupSignalHandler()
 	if err := (&controller.ImageBuildReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+		Client:               mgr.GetClient(),
+		EventRecorder:        mgr.GetEventRecorder(controller.ControllerName),
+		NoCrossNamespaceRefs: aclOptions.NoCrossNamespaceRefs,
+	}).SetupWithManager(ctx, mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "imagebuild")
 		os.Exit(1)
 	}
@@ -209,7 +220,7 @@ func main() {
 	}
 
 	setupLog.Info("Starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)
 	}

@@ -64,6 +64,7 @@ description = "Run unit and controller tests with envtest"
 depends = ["generate"]
 run = '''
 k8s_version="$(go list -m k8s.io/api | awk '{print $2}' | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/')"
+mkdir -p .cache
 KUBEBUILDER_ASSETS="$(setup-envtest use "$k8s_version" --bin-dir "{{config_root}}/bin" -p path)" \
   go test $(go list ./... | grep -v /e2e) -coverprofile .cache/cover.out
 '''

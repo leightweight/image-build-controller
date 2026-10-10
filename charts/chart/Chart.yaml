@@ -1,0 +1,20 @@
+apiVersion: v2
+name: image-build-controller
+description: Builds container images from Flux sources so Flux image automation can deploy them
+type: application
+
+version: 0.1.0
+appVersion: "0.1.0"
+
+home: https://github.com/leightweight/image-build-controller
+sources:
+  - https://github.com/leightweight/image-build-controller
+
+keywords:
+  - kubernetes
+  - operator
+  - flux
+  - buildkit
+
+annotations:
+  kubebuilder.io/generated-by: kubebuilder

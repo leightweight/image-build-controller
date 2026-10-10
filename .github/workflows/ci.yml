@@ -21,6 +21,11 @@ jobs:
         with:
           version: 2026.10.7
       - run: mise run lint
+      - name: Check that the Helm chart matches the Kustomize config
+        run: |
+          mise run chart
+          git add --intent-to-add --all
+          git diff --exit-code || { echo "::error::Run 'mise run chart' and commit the result."; exit 1; }
 
   test:
     name: Test

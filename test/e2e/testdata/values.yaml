@@ -1,0 +1,9 @@
+# Example Helm values for installing image-build-controller on a cluster that runs Flux.
+# The end-to-end test installs the chart with these values.
+
+# Flux's default NetworkPolicies only allow traffic to source-controller from the flux-system namespace.
+# flux bootstrap and flux install add them, and so do most other Flux installs.
+# This policy lets build pods in any namespace download source artifacts.
+# Without it, builds from a GitRepository time out in the fetch step on clusters whose CNI enforces NetworkPolicies.
+sourceControllerNetworkPolicy:
+  enabled: true

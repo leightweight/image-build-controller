@@ -409,6 +409,8 @@ The rendered build Jobs also built and pushed images on kind with Kubernetes 1.3
 By default, `flux bootstrap` installs NetworkPolicies that only allow pods in `flux-system` to reach source-controller.
 Build pods in other namespaces cannot download artifacts without an extra policy.
 The Helm chart includes an optional NetworkPolicy that allows traffic to the source-controller artifact port from pods labelled `app.kubernetes.io/managed-by: image-build-controller` in any namespace.
+`sourceControllerNetworkPolicy.enabled` turns it on, and it is off by default, because the chart would otherwise create an object in another release's namespace.
+The example install values enable it with a comment that explains why, because most Flux installs add the restrictive policies, including installs that don't use the Flux CLI.
 
 ### Controller RBAC
 
@@ -451,6 +453,25 @@ Build pods mount the registry Secret directly.
 - `install.yaml`: a release asset generated from the kubebuilder Kustomize config, available but not the main documented method.
 - Controller images: multi-arch, built and published by goreleaser.
 
+### Helm chart
+
+Kubebuilder's `helm/v2-alpha` plugin generates the chart in `charts/chart` from the `config/default` Kustomize output.
+`mise run chart` regenerates it, and CI fails when the committed chart doesn't match `config/`.
+The plugin regenerates every template that comes from Kustomize.
+It keeps `Chart.yaml`, `values.yaml`, and templates it didn't create, so hand edits go only in those files and in `templates/extras/`.
+
+The chart's defaults:
+
+- The controller runs one replica with leader election.
+- The metrics endpoint serves HTTPS with controller-runtime's self-signed certificate and Kubernetes authentication.
+- cert-manager integration is off, because the controller has no webhooks.
+- The Prometheus `ServiceMonitor` is off, because it needs the prometheus-operator CRDs.
+- The NetworkPolicy for the metrics endpoint and the RBAC helper roles are off, as the plugin generates them.
+- The source-controller NetworkPolicy is off.
+- The CRDs are templates with Helm's `keep` resource policy, so upgrades update them and uninstalls keep them.
+
+Controller flags go in the `manager.args` list, because typed values would need edits to the generated Deployment template.
+
 ## CI
 
 GitHub Actions runs:
@@ -460,8 +481,9 @@ GitHub Actions runs:
 - an end-to-end test on kind that builds a real image with Flux and a local registry.
 
 The end-to-end test installs Flux source-controller, a Gitea server, and a plain HTTP registry in the kind cluster.
+It installs the controller with the Helm chart and the example values in `test/e2e/testdata/values.yaml`.
 It commits a Dockerfile to a Gitea repository and points a `GitRepository` at it.
-It also applies the source-controller NetworkPolicy that the Helm chart will offer, and keeps Flux's default policies, so build pods download artifacts through it.
+The example values enable the chart's source-controller NetworkPolicy, and the test keeps Flux's default policies, so build pods download artifacts through it.
 On hosts with DMI data, such as GitHub's runners, kind bind-mounts files over `/sys/devices/virtual/dmi/id` in each node.
 The kernel refuses new sysfs mounts in user namespaces while part of `/sys` is hidden, so `mise run test:e2e` removes those mounts after it creates the cluster.
 Its specs check that:

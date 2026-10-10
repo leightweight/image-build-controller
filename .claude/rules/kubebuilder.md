@@ -1,6 +1,7 @@
 ---
 paths:
   - "api/**"
+  - "charts/**"
   - "cmd/**"
   - "config/**"
   - "internal/**"
@@ -18,6 +19,9 @@ paths:
 - Do not delete `// +kubebuilder:scaffold:*` comments.
   The CLI adds code at those markers.
 - Keep files where kubebuilder put them, because the CLI expects that layout.
+- `mise run chart` generates the Helm chart in `charts/chart` with the `helm/v2-alpha` plugin.
+  Change generated templates through `config/` and regenerate them, never by hand.
+  Hand edits go only in `Chart.yaml`, `values.yaml`, and `templates/extras/`, which the plugin keeps.
 - Watch types from other projects, such as Flux's `GitRepository`, from the `ImageBuild` controller with `Watches()`.
   Import their Go API module and register it in the manager's scheme.
   Don't scaffold a separate controller for them with `kubebuilder create api --resource=false`.

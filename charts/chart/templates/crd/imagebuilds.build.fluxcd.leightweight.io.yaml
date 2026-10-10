@@ -1,0 +1,499 @@
+{{- if .Values.crd.enabled }}
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    {{- if .Values.crd.keep }}
+    "helm.sh/resource-policy": keep
+    {{- end }}
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: imagebuilds.build.fluxcd.leightweight.io
+spec:
+  group: build.fluxcd.leightweight.io
+  names:
+    kind: ImageBuild
+    listKind: ImageBuildList
+    plural: imagebuilds
+    shortNames:
+    - ib
+    singular: imagebuild
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.lastBuild.sourceRevision
+      name: Revision
+      type: string
+    - jsonPath: .status.latestImage
+      name: Latest Image
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: ImageBuild builds a container image from a Flux source or an
+          inline Dockerfile and pushes it to a registry.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the image to build and where to push it.
+            properties:
+              backoffLimit:
+                default: 2
+                description: backoffLimit is the number of times the build Job retries
+                  a failed build pod before the build fails.
+                format: int32
+                minimum: 0
+                type: integer
+              buildArgs:
+                additionalProperties:
+                  type: string
+                description: buildArgs are passed to the build as build arguments.
+                type: object
+              cache:
+                default: {}
+                description: cache configures the registry build cache.
+                properties:
+                  enabled:
+                    default: true
+                    description: enabled stores the build cache in the registry at
+                      <image>:buildcache, using the push credentials.
+                    type: boolean
+                type: object
+              concurrencyPolicy:
+                default: Replace
+                description: |-
+                  concurrencyPolicy controls what happens when a new build is needed while one is running.
+                  Replace cancels the running build and starts the new one.
+                  Wait lets the running build finish, then builds the latest state and skips any revisions in between.
+                enum:
+                - Replace
+                - Wait
+                type: string
+              context:
+                description: |-
+                  context is the subdirectory of the source to use as the build context.
+                  It defaults to the source root.
+                maxLength: 1024
+                type: string
+                x-kubernetes-validations:
+                - message: context must be a relative path
+                  rule: '!self.startsWith(''/'')'
+                - message: context must not contain '..'
+                  rule: '!self.split(''/'').exists(s, s == ''..'')'
+              dockerfile:
+                description: dockerfile sets the Dockerfile to build, as a path in
+                  the source or as inline contents.
+                properties:
+                  inline:
+                    description: inline holds the Dockerfile contents.
+                    minLength: 1
+                    type: string
+                  path:
+                    description: path is the Dockerfile's path relative to the source
+                      root.
+                    maxLength: 1024
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: path must be a relative path
+                      rule: '!self.startsWith(''/'')'
+                    - message: path must not contain '..'
+                      rule: '!self.split(''/'').exists(s, s == ''..'')'
+                type: object
+                x-kubernetes-validations:
+                - message: exactly one of path or inline must be set
+                  rule: has(self.path) != has(self.inline)
+              failedBuildsHistoryLimit:
+                default: 3
+                description: failedBuildsHistoryLimit is the number of finished failed
+                  build Jobs to keep.
+                format: int32
+                minimum: 0
+                type: integer
+              interval:
+                default: 10m
+                description: |-
+                  interval is how often the controller re-checks this ImageBuild and corrects drift.
+                  It never triggers a build on its own.
+                pattern: ^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$
+                type: string
+              nodeSelector:
+                additionalProperties:
+                  type: string
+                description: nodeSelector constrains the build pod to nodes with these
+                  labels.
+                type: object
+              push:
+                description: push sets the image name, tags, and registry credentials.
+                properties:
+                  image:
+                    description: image is the image name without a tag or digest,
+                      such as registry.example/foo/bar.
+                    maxLength: 512
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: image must not include a digest
+                      rule: '!self.contains(''@'')'
+                    - message: image must not include a tag; set tags instead
+                      rule: '!self.split(''/'')[self.split(''/'').size() - 1].contains('':'')'
+                  insecure:
+                    description: insecure allows pushing to a registry over plain
+                      HTTP.
+                    type: boolean
+                  secretRef:
+                    description: secretRef references a kubernetes.io/dockerconfigjson
+                      Secret in the ImageBuild namespace with the registry credentials.
+                    properties:
+                      name:
+                        description: Name of the referent.
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  tags:
+                    description: |-
+                      tags is a list of Go templates, and the build pushes every rendered tag.
+                      The templates can use .Branch, .Tag, .SHA, .ShortSHA, .Timestamp, and .Generation.
+                      It defaults to {{ "{{ .Branch }}" }}-{{ "{{ .ShortSHA }}" }}-{{ "{{ .Timestamp }}" }}, or to build-{{ "{{ .Timestamp }}" }} without a sourceRef.
+                    items:
+                      type: string
+                    maxItems: 32
+                    type: array
+                required:
+                - image
+                type: object
+                x-kubernetes-validations:
+                - message: secretRef.name must not be empty
+                  rule: '!has(self.secretRef) || size(self.secretRef.name) > 0'
+              rebuildInterval:
+                description: |-
+                  rebuildInterval forces a rebuild after this much time has passed since the last build, even if nothing changed.
+                  Use it to pick up base image security patches.
+                pattern: ^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$
+                type: string
+              resources:
+                description: resources sets the compute resources of the build container.
+                properties:
+                  claims:
+                    description: |-
+                      Claims lists the names of resources, defined in spec.resourceClaims,
+                      that are used by this container.
+
+                      This field depends on the
+                      DynamicResourceAllocation feature gate.
+
+                      This field is immutable. It can only be set for containers.
+                    items:
+                      description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                      properties:
+                        name:
+                          description: |-
+                            Name must match the name of one entry in pod.spec.resourceClaims of
+                            the Pod where this field is used. It makes that resource available
+                            inside a container.
+                          type: string
+                        request:
+                          description: |-
+                            Request is the name chosen for a request in the referenced claim.
+                            If empty, everything from the claim is made available, otherwise
+                            only the result of this request.
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                  limits:
+                    additionalProperties:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    description: |-
+                      Limits describes the maximum amount of compute resources allowed.
+                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                    type: object
+                  requests:
+                    additionalProperties:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    description: |-
+                      Requests describes the minimum amount of compute resources required.
+                      If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                      otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                    type: object
+                type: object
+              sourceRef:
+                description: |-
+                  sourceRef references the Flux source to build from.
+                  Only GitRepository is supported.
+                  It is required when dockerfile.path is set.
+                  Without it, the build uses an empty context.
+                properties:
+                  apiVersion:
+                    description: API version of the referent, if not specified the
+                      Kubernetes preferred version will be used.
+                    type: string
+                  kind:
+                    description: Kind of the referent.
+                    type: string
+                  name:
+                    description: Name of the referent.
+                    type: string
+                  namespace:
+                    description: Namespace of the referent, when not specified it
+                      acts as LocalObjectReference.
+                    type: string
+                required:
+                - kind
+                - name
+                type: object
+              successfulBuildsHistoryLimit:
+                default: 1
+                description: successfulBuildsHistoryLimit is the number of finished
+                  successful build Jobs to keep.
+                format: int32
+                minimum: 0
+                type: integer
+              suspend:
+                description: suspend stops the controller from reconciling this ImageBuild.
+                type: boolean
+              target:
+                description: |-
+                  target is the stage to build in a multi-stage Dockerfile.
+                  It defaults to the last stage.
+                type: string
+              tolerations:
+                description: tolerations lets the build pod schedule onto nodes with
+                  matching taints.
+                items:
+                  description: |-
+                    The pod this Toleration is attached to tolerates any taint that matches
+                    the triple <key,value,effect> using the matching operator <operator>.
+                  properties:
+                    effect:
+                      description: |-
+                        Effect indicates the taint effect to match. Empty means match all taint effects.
+                        When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                      type: string
+                    key:
+                      description: |-
+                        Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                        If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                      type: string
+                    operator:
+                      description: |-
+                        Operator represents a key's relationship to the value.
+                        Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
+                        Exists is equivalent to wildcard for value, so that a pod can
+                        tolerate all taints of a particular category.
+                        Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
+                      type: string
+                    tolerationSeconds:
+                      description: |-
+                        TolerationSeconds represents the period of time the toleration (which must be
+                        of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                        it is not set, which means tolerate the taint forever (do not evict). Zero and
+                        negative values will be treated as 0 (evict immediately) by the system.
+                      format: int64
+                      type: integer
+                    value:
+                      description: |-
+                        Value is the taint value the toleration matches to.
+                        If the operator is Exists, the value should be empty, otherwise just a regular string.
+                      type: string
+                  type: object
+                type: array
+              userNamespaces:
+                description: |-
+                  userNamespaces runs the build pod with hostUsers set to false, so container users map to unprivileged host users.
+                  When unset, the controller's --default-user-namespaces flag decides, and that flag defaults to true.
+                  Nodes need Kubernetes 1.33 or later, Linux 6.3 or later, and containerd 2.0 or later or CRI-O.
+                type: boolean
+            required:
+            - dockerfile
+            - push
+            type: object
+            x-kubernetes-validations:
+            - message: sourceRef is required when dockerfile.path is set
+              rule: '!has(self.dockerfile.path) || has(self.sourceRef)'
+            - message: sourceRef.kind must be GitRepository
+              rule: '!has(self.sourceRef) || self.sourceRef.kind == ''GitRepository'''
+            - message: sourceRef.name must not be empty
+              rule: '!has(self.sourceRef) || size(self.sourceRef.name) > 0'
+          status:
+            description: status is the observed state of the ImageBuild.
+            properties:
+              conditions:
+                description: conditions holds the Ready, Reconciling, and Stalled
+                  conditions.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              currentBuild:
+                description: currentBuild describes the running build, and is present
+                  only while a build runs.
+                properties:
+                  jobName:
+                    description: jobName is the name of the build Job.
+                    type: string
+                  sourceRevision:
+                    description: sourceRevision is the source revision being built.
+                    type: string
+                  startedAt:
+                    description: startedAt is when the build started.
+                    format: date-time
+                    type: string
+                required:
+                - jobName
+                type: object
+              lastBuild:
+                description: lastBuild describes the last finished build.
+                properties:
+                  buildKey:
+                    description: buildKey is the hash of the inputs that produced
+                      this build.
+                    type: string
+                  finishedAt:
+                    description: finishedAt is when the build finished.
+                    format: date-time
+                    type: string
+                  image:
+                    description: image lists the pushed tags and the image digest.
+                    properties:
+                      digest:
+                        description: digest is the digest of the pushed image.
+                        type: string
+                      tags:
+                        description: tags are the tags the build pushed.
+                        items:
+                          type: string
+                        type: array
+                    type: object
+                  jobName:
+                    description: jobName is the name of the build Job.
+                    type: string
+                  result:
+                    description: result is Succeeded or Failed.
+                    enum:
+                    - Succeeded
+                    - Failed
+                    type: string
+                  sourceRevision:
+                    description: sourceRevision is the source revision that was built.
+                    type: string
+                  startedAt:
+                    description: startedAt is when the build started.
+                    format: date-time
+                    type: string
+                required:
+                - buildKey
+                - result
+                type: object
+              lastHandledReconcileAt:
+                description: |-
+                  LastHandledReconcileAt holds the value of the most recent
+                  reconcile request value, so a change of the annotation value
+                  can be detected.
+                type: string
+              latestImage:
+                description: latestImage is the most recently pushed image, as name@digest.
+                type: string
+              observedGeneration:
+                description: observedGeneration is the last generation the controller
+                  reconciled.
+                format: int64
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+{{- end }}

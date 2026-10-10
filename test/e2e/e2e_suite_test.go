@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -63,19 +64,24 @@ var _ = BeforeSuite(func() {
 	_, err = utils.Run(cmd)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to install Flux")
 
-	By("installing the Git server, the registry, and the source-controller NetworkPolicy")
+	By("installing the Git server and the registry")
 	cmd = exec.Command("kubectl", "apply",
 		"-f", "test/e2e/testdata/gitea.yaml",
 		"-f", "test/e2e/testdata/registry.yaml",
-		"-f", "test/e2e/testdata/source-controller-networkpolicy.yaml",
 	)
 	_, err = utils.Run(cmd)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to install the test services")
 
-	By("deploying the controller")
-	cmd = exec.Command("mise", "run", "deploy", managerImage)
+	By("installing the controller with the Helm chart")
+	repository, tag, _ := strings.Cut(managerImage, ":")
+	cmd = exec.Command("helm", "upgrade", "--install", "image-build-controller", "charts/chart",
+		"--namespace", controllerNamespace, "--create-namespace",
+		"--values", "test/e2e/testdata/values.yaml",
+		"--set", "manager.image.repository="+repository,
+		"--set", "manager.image.tag="+tag,
+	)
 	_, err = utils.Run(cmd)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to deploy the controller")
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to install the Helm chart")
 
 	for _, deployment := range []struct{ namespace, name string }{
 		{giteaNamespace, giteaDeployment},

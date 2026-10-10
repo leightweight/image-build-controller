@@ -25,6 +25,7 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -37,6 +38,7 @@ import (
 
 	buildv1alpha1 "github.com/leightweight/image-build-controller/api/v1alpha1"
 	"github.com/leightweight/image-build-controller/internal/controller"
+	"github.com/leightweight/image-build-controller/internal/fetch"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -54,6 +56,12 @@ func init() {
 
 // nolint:gocyclo
 func main() {
+	// The build pod's init container runs this binary as "fetch" to download the build context.
+	if len(os.Args) > 1 && os.Args[1] == "fetch" {
+		ctx := logr.NewContext(ctrl.SetupSignalHandler(), zap.New(zap.UseDevMode(false)).WithName("fetch"))
+		os.Exit(fetch.Main(ctx, os.Args[2:], os.Stderr))
+	}
+
 	var metricsAddr string
 	var metricsCertPath, metricsCertName, metricsCertKey string
 	var webhookCertPath, webhookCertName, webhookCertKey string

@@ -222,8 +222,9 @@ After a restart, the controller finds and adopts an existing Job for the current
 
 The pod has two containers:
 
-1. An init container that runs the controller image with the `fetch` subcommand.
+1. An init container that runs the controller image as `manager fetch --url <url> --digest <digest> --dest <dir>`.
    It uses `fluxcd/pkg/http/fetch` to download the Flux source artifact, verify its digest, and extract it into an `emptyDir` volume.
+   It retries a failed download 9 times by default, like the Flux controllers, and skips symlinks in the artifact.
    For builds with user namespaces, it also writes the `subuid` and `subgid` files described in [User namespaces](#user-namespaces).
 2. A build container that runs rootless BuildKit in daemonless mode with `buildctl-daemonless.sh`.
    It builds from the extracted context and pushes to the registry.
@@ -370,3 +371,4 @@ GitHub Actions runs:
 
 1. Whether notification-controller accepts events from custom kinds.
 2. Whether rootless BuildKit works with a read-only root filesystem, and which paths need writable volumes.
+   The `fetch` init container also needs a writable `$TMPDIR`, because the Flux fetcher downloads to a temporary file before extracting it.

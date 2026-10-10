@@ -149,7 +149,11 @@ That one format works for GHCR, Docker Hub, and in-cluster registries.
 `concurrencyPolicy` controls what happens when a new build is needed while one is running.
 
 - `Replace` (default): cancel the running build and start the new one.
+  The controller deletes the running Job, and Kubernetes deletes its pods.
 - `Wait`: let the running build finish, then build the latest state and skip any revisions in between.
+  While it waits, `currentBuild` names the running Job and the `Reconciling` condition has reason `WaitingForBuild`.
+
+Anything that changes the [build key](#build-key) counts as a new build, including a `requestedAt` annotation and the start of a new `rebuildInterval` period.
 
 ### Validation
 
@@ -201,7 +205,23 @@ status:
 ```
 
 `currentBuild` is present only while a build is running.
+`latestImage` is `<image>@<digest>` from the last successful build, or `<image>:<first tag>` if the build reported no digest.
 `kubectl get imagebuilds` shows Ready, Revision, Latest Image, and Age columns.
+
+### Conditions
+
+| State | `Ready` | `Reconciling` | `Stalled` | Retry |
+|---|---|---|---|---|
+| Source missing or without an artifact | `False`, `SourceNotReady` | `True`, `ProgressingWithRetry` | | After `spec.interval` |
+| Cross-namespace source with `--no-cross-namespace-refs` | `False`, `AccessDenied` | | `True`, `AccessDenied` | After a spec change |
+| `push.tags` can't be rendered | `False`, `InvalidTags` | | `True`, `InvalidTags` | After a spec change |
+| A build for the current key is running | `Unknown`, `Building` | `True`, `Building` | | When the Job or its pods change |
+| An older build runs with `concurrencyPolicy: Wait` | `Unknown`, `WaitingForBuild` | `True`, `WaitingForBuild` | | When the Job or its pods change |
+| The last build for the current key succeeded | `True`, `Succeeded` | | | After `spec.interval` or at the next `rebuildInterval` period |
+| The last build for the current key failed | `False`, `BuildFailed` | | `True`, `BuildFailed` | After a key change |
+
+A finished build records an Event with reason `Succeeded` or `BuildFailed`.
+Other changes to `Ready` record an Event with the new reason, as a `Warning` when `Ready` is `False`.
 
 ## Build lifecycle
 
@@ -234,6 +254,7 @@ The controller does not check whether the image still exists in the registry.
 - A spec field that affects the image changes.
 - The `reconcile.fluxcd.io/requestedAt` annotation changes.
 - `rebuildInterval` elapses, so the image picks up base image security patches.
+  After a build, the controller checks again one second after the current period ends, or after `spec.interval` if that comes first.
 
 If the source doesn't exist or has no artifact yet, the `ImageBuild` reports `Ready=False` with reason `SourceNotReady` and waits.
 Like the Flux controllers, the controller builds from the source's last artifact even when its latest fetch failed.
@@ -243,14 +264,20 @@ Like the Flux controllers, the controller builds from the source's last artifact
 Each build is a Job in the `ImageBuild` namespace, with a controller owner reference to the `ImageBuild`.
 The Job name is `<name>-<first 10 characters of the build key>`.
 The `ImageBuild` name is shortened so the whole Job name fits in 63 characters, because the Job controller uses the name as a label value, and dots become hyphens so pod hostnames stay valid.
-After a restart, the controller finds and adopts an existing Job for the current build key instead of creating a duplicate.
+After a restart, the controller finds and adopts a running Job for the current build key instead of creating a duplicate.
+
+The controller records a finished Job's result only when `status.currentBuild` names that Job.
+Every other finished Job is history.
+If the build key returns to the key of a Job still in history, the controller deletes that Job and builds again, so the new build gets new tags.
+A controller that crashes after creating a Job but before recording it in `currentBuild` adopts the Job if it's still running, and otherwise builds the key again.
 
 The Job and its pods carry the `app.kubernetes.io/managed-by: image-build-controller` label.
 The Job also carries these annotations:
 
 - `build.fluxcd.leightweight.io/build-key`: the full build key;
 - `build.fluxcd.leightweight.io/source-revision`: the source revision, for builds with a source;
-- `build.fluxcd.leightweight.io/tags`: the comma-separated tags the build pushes.
+- `build.fluxcd.leightweight.io/tags`: the comma-separated tags the build pushes;
+- `build.fluxcd.leightweight.io/image`: the image name the build pushes to, so the result names the right image even if `push.image` changed during the build.
 
 The pod has up to two containers:
 
@@ -297,8 +324,12 @@ The container's exit code tells the two apart.
 - After the final attempt fails, the `ImageBuild` reports `Ready=False` and `Stalled=True` with reason `BuildFailed`.
 - The controller never retries a failed build key on its own.
   A new revision, a spec change, or `requestedAt` starts a new build.
-- The build container uses `terminationMessagePolicy: FallbackToLogsOnError`.
-  Kubernetes copies the tail of the build log into the termination message, and the controller puts it in the condition message and a Kubernetes Event without needing permission to read logs.
+- The build and fetch containers use `terminationMessagePolicy: FallbackToLogsOnError`.
+  Kubernetes copies the tail of the log into the termination message, and the controller puts it in the condition message and a Kubernetes Event without needing permission to read logs.
+- The message comes from the attempt that finished last.
+  If no pod left a message, the controller uses the reason and message of the Job's `Failed` condition.
+- The API server limits an Event's note to 1024 bytes, so the Event keeps the end of a longer message, where the error is.
+  The condition keeps the whole message.
 
 ### Build pod finalizer
 
@@ -312,13 +343,19 @@ The Job's pod template carries the `build.fluxcd.leightweight.io/termination-mes
    The message is the [image digest](#image-digest) after a successful build and the tail of the build log after a failed one.
 3. The controller then removes the finalizer.
 
-The controller also removes the finalizer from pods of Jobs that are being deleted, so history cleanup and `ImageBuild` deletion don't leave pods stuck.
+The controller persists the status before it removes the finalizer, so a failed status update can't lose a termination message.
+
+A second controller in the same process releases pods that nobody will read: build pods being deleted whose Job or `ImageBuild` is gone or being deleted.
+It covers cancelled builds, history cleanup, and `ImageBuild` deletion, so they don't leave pods stuck.
 If the controller is uninstalled while build pods exist, they stay until someone removes the finalizer, so the uninstall docs must cover it.
 
 ### History
 
 Kubernetes deletes a build's Jobs through owner references when the `ImageBuild` is deleted.
 `successfulBuildsHistoryLimit` (default 1) and `failedBuildsHistoryLimit` (default 3) limit how many finished Jobs the controller keeps, the same way `CronJob` does.
+After recording a result, the controller deletes the oldest finished Jobs beyond the limits.
+It never deletes a running Job or one whose result it hasn't recorded yet.
+A limit of 0 deletes each finished Job once its result is recorded.
 
 ## Security
 
@@ -378,6 +415,7 @@ The Helm chart includes an optional NetworkPolicy that allows traffic to the sou
 The controller watches `ImageBuild` resources across the whole cluster with these permissions:
 
 - `ImageBuild`: get, list, watch, update, patch, and update status;
+- `ImageBuild` finalizers: update, because clusters that enforce owner reference permissions require it to create Jobs that block their `ImageBuild`'s deletion;
 - `Job`: create, delete, get, list, and watch;
 - `Pod`: get, list, watch, and patch, to read termination messages and remove the [build pod finalizer](#build-pod-finalizer);
 - `GitRepository`: get, list, and watch;
@@ -388,7 +426,10 @@ Build pods mount the registry Secret directly.
 
 ### Controller flags
 
-- The default BuildKit image.
+- `--buildkit-image`, the BuildKit image, defaulting to the image the release pins.
+- `--fetch-image`, the image for the fetch init container.
+  It defaults to the controller's own image, which the controller reads from its pod at startup through the `POD_NAMESPACE` and `POD_NAME` environment variables that the Deployment sets with the downward API.
+  That needs no configuration, and the init container always runs the same controller version.
 - `--default-user-namespaces`, the default for `userNamespaces`, which is true.
 - Restricting the controller to a single namespace.
 - `--no-cross-namespace-refs`, which rejects `sourceRef`s in other namespaces, as Flux does.
@@ -400,6 +441,7 @@ Build pods mount the registry Secret directly.
 - Flux runtime: `fluxcd/pkg/runtime` for conditions, patch helpers, event recording, and `requestedAt` handling.
 - Source types: `fluxcd/source-controller/api`.
 - Artifact fetching: `fluxcd/pkg/http/fetch`.
+- Caching: the manager caches only Jobs and pods with the `app.kubernetes.io/managed-by: image-build-controller` label, so it doesn't hold every Job and pod in the cluster in memory.
 - Build backend: rootless BuildKit behind a small internal interface.
   The API exposes only BuildKit.
 

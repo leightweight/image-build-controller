@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/config"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	aclapi "github.com/fluxcd/pkg/apis/acl"
@@ -37,9 +38,20 @@ import (
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 
 	buildv1alpha1 "github.com/leightweight/image-build-controller/api/v1alpha1"
+	"github.com/leightweight/image-build-controller/internal/build"
 )
 
 const defaultInterval = 10 * time.Minute
+
+// testBuildConfig is the controller-wide build configuration the tests use.
+var testBuildConfig = build.Config{
+	BuildKitImage:         build.DefaultBuildKitImage,
+	FetchImage:            "ghcr.io/leightweight/image-build-controller:test",
+	DefaultUserNamespaces: true,
+}
+
+// testNow is the fixed time the reconcilers in these tests see.
+var testNow = time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
 
 // newNamespace creates a namespace with a generated name, so each test works in isolation.
 func newNamespace(ctx context.Context) string {
@@ -134,7 +146,12 @@ var _ = Describe("ImageBuildReconciler", func() {
 		ctx = context.Background()
 		namespace = newNamespace(ctx)
 		recorder = events.NewFakeRecorder(10)
-		reconciler = &ImageBuildReconciler{Client: k8sClient, EventRecorder: recorder}
+		reconciler = &ImageBuildReconciler{
+			Client:        k8sClient,
+			EventRecorder: recorder,
+			BuildConfig:   testBuildConfig,
+			Now:           func() time.Time { return testNow },
+		}
 	})
 
 	reconcileOnce := func(ib *buildv1alpha1.ImageBuild) (ctrl.Result, error) {
@@ -154,7 +171,7 @@ var _ = Describe("ImageBuildReconciler", func() {
 		It("leaves the conditions alone but records a reconcile request", func() {
 			ib := newImageBuild(ctx, namespace, nil, func(ib *buildv1alpha1.ImageBuild) {
 				ib.Spec.Suspend = true
-				ib.Annotations = map[string]string{meta.ReconcileRequestAnnotation: "token-1"}
+				ib.Annotations = map[string]string{meta.ReconcileRequestAnnotation: testToken}
 			})
 
 			result, err := reconcileOnce(ib)
@@ -163,24 +180,21 @@ var _ = Describe("ImageBuildReconciler", func() {
 			Expect(result).To(BeZero())
 			got := getImageBuild(ctx, ib)
 			Expect(got.Status.Conditions).To(BeEmpty())
-			Expect(got.Status.LastHandledReconcileAt).To(Equal("token-1"))
+			Expect(got.Status.LastHandledReconcileAt).To(Equal(testToken))
 			Expect(recorder.Events).To(BeEmpty())
 		})
 	})
 
 	Context("with an inline Dockerfile and no source", func() {
-		It("skips source resolution and reports that builds aren't implemented yet", func() {
+		It("skips source resolution and starts a build", func() {
 			ib := newImageBuild(ctx, namespace, nil)
 
-			result, err := reconcileOnce(ib)
+			_, err := reconcileOnce(ib)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).To(BeZero(), "a stalled ImageBuild waits for a change instead of requeueing")
-			got := getImageBuild(ctx, ib)
-			Expect(got).To(haveCondition(meta.ReadyCondition, metav1.ConditionFalse, BuildNotImplementedReason))
-			Expect(got).To(haveCondition(meta.StalledCondition, metav1.ConditionTrue, BuildNotImplementedReason))
-			Expect(got).To(notHaveCondition(meta.ReconcilingCondition))
-			Expect(got.Status.ObservedGeneration).To(Equal(got.Generation))
+			Expect(getImageBuild(ctx, ib)).To(haveCondition(meta.ReconcilingCondition, metav1.ConditionTrue, buildv1alpha1.BuildingReason))
+			Expect(onlyJob(ctx, namespace).Spec.Template.Spec.InitContainers).To(BeEmpty(),
+				"a build without a source has nothing to fetch")
 		})
 	})
 
@@ -232,7 +246,7 @@ var _ = Describe("ImageBuildReconciler", func() {
 
 			Expect(err).NotTo(HaveOccurred())
 			got := getImageBuild(ctx, ib)
-			Expect(got).To(haveCondition(meta.StalledCondition, metav1.ConditionTrue, BuildNotImplementedReason))
+			Expect(got).To(haveCondition(meta.ReconcilingCondition, metav1.ConditionTrue, buildv1alpha1.BuildingReason))
 		})
 
 		It("builds from the last artifact even if the GitRepository's latest fetch failed", func() {
@@ -245,7 +259,7 @@ var _ = Describe("ImageBuildReconciler", func() {
 
 			Expect(err).NotTo(HaveOccurred())
 			got := getImageBuild(ctx, ib)
-			Expect(got).To(haveCondition(meta.StalledCondition, metav1.ConditionTrue, BuildNotImplementedReason))
+			Expect(got).To(haveCondition(meta.ReconcilingCondition, metav1.ConditionTrue, buildv1alpha1.BuildingReason))
 		})
 
 		It("allows a GitRepository in another namespace by default", func() {
@@ -256,7 +270,7 @@ var _ = Describe("ImageBuildReconciler", func() {
 			_, err := reconcileOnce(ib)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(getImageBuild(ctx, ib)).To(haveCondition(meta.StalledCondition, metav1.ConditionTrue, BuildNotImplementedReason))
+			Expect(getImageBuild(ctx, ib)).To(haveCondition(meta.ReconcilingCondition, metav1.ConditionTrue, buildv1alpha1.BuildingReason))
 		})
 
 		Context("with --no-cross-namespace-refs", func() {
@@ -288,30 +302,33 @@ var _ = Describe("ImageBuildReconciler", func() {
 				_, err := reconcileOnce(ib)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(getImageBuild(ctx, ib)).To(haveCondition(meta.StalledCondition, metav1.ConditionTrue, BuildNotImplementedReason))
+				Expect(getImageBuild(ctx, ib)).To(haveCondition(meta.ReconcilingCondition, metav1.ConditionTrue, buildv1alpha1.BuildingReason))
 			})
 		})
 	})
 
 	It("records the reconcile request it handled", func() {
 		ib := newImageBuild(ctx, namespace, nil, func(ib *buildv1alpha1.ImageBuild) {
-			ib.Annotations = map[string]string{meta.ReconcileRequestAnnotation: "token-1"}
+			ib.Annotations = map[string]string{meta.ReconcileRequestAnnotation: testToken}
 		})
 
 		_, err := reconcileOnce(ib)
 
 		Expect(err).NotTo(HaveOccurred())
-		Expect(getImageBuild(ctx, ib).Status.LastHandledReconcileAt).To(Equal("token-1"))
+		Expect(getImageBuild(ctx, ib).Status.LastHandledReconcileAt).To(Equal(testToken))
 	})
 
 	It("updates observedGeneration when the spec changes", func() {
-		ib := newImageBuild(ctx, namespace, nil)
+		// Stalled and Ready ImageBuilds record observedGeneration; invalid tags stall it.
+		ib := newImageBuild(ctx, namespace, nil, func(ib *buildv1alpha1.ImageBuild) {
+			ib.Spec.Push.Tags = []string{"{{ .Unknown }}"}
+		})
 		_, err := reconcileOnce(ib)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(getImageBuild(ctx, ib).Status.ObservedGeneration).To(BeEquivalentTo(1))
 
 		got := getImageBuild(ctx, ib)
-		got.Spec.Target = "runtime"
+		got.Spec.Target = testTarget
 		Expect(k8sClient.Update(ctx, got)).To(Succeed())
 		_, err = reconcileOnce(ib)
 		Expect(err).NotTo(HaveOccurred())
@@ -320,11 +337,12 @@ var _ = Describe("ImageBuildReconciler", func() {
 	})
 
 	It("records an Event when Ready changes, and not again while it stays the same", func() {
-		ib := newImageBuild(ctx, namespace, nil)
+		ib := newImageBuild(ctx, namespace, gitRepositoryRef("", "app"))
 
 		_, err := reconcileOnce(ib)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(recorder.Events).To(Receive(Equal("Warning " + BuildNotImplementedReason + " Building images is not implemented yet")))
+		Expect(recorder.Events).To(Receive(Equal(
+			"Warning " + buildv1alpha1.SourceNotReadyReason + " GitRepository " + namespace + "/app was not found")))
 
 		_, err = reconcileOnce(ib)
 		Expect(err).NotTo(HaveOccurred())
@@ -340,8 +358,10 @@ var _ = Describe("ImageBuildReconciler with a running manager", Ordered, func() 
 
 	BeforeAll(func() {
 		mgr, err := ctrl.NewManager(cfg, ctrl.Options{
-			Scheme:  scheme.Scheme,
-			Metrics: metricsserver.Options{BindAddress: "0"},
+			Scheme:     scheme.Scheme,
+			Metrics:    metricsserver.Options{BindAddress: "0"},
+			Cache:      CacheOptions(),
+			Controller: config.Controller{SkipNameValidation: new(true)},
 		})
 		Expect(err).NotTo(HaveOccurred())
 
@@ -350,7 +370,9 @@ var _ = Describe("ImageBuildReconciler with a running manager", Ordered, func() 
 		Expect((&ImageBuildReconciler{
 			Client:        mgr.GetClient(),
 			EventRecorder: mgr.GetEventRecorder(ControllerName),
+			BuildConfig:   testBuildConfig,
 		}).SetupWithManager(mgrCtx, mgr)).To(Succeed())
+		Expect((&BuildPodReconciler{Client: mgr.GetClient()}).SetupWithManager(mgr)).To(Succeed())
 
 		go func() {
 			defer GinkgoRecover()
@@ -376,7 +398,7 @@ var _ = Describe("ImageBuildReconciler with a running manager", Ordered, func() 
 		// spec.interval is 10 minutes, so only the GitRepository watch can trigger this reconciliation in time.
 		Eventually(func() *buildv1alpha1.ImageBuild { return getImageBuild(ctx, ib) }).
 			WithContext(ctx).
-			Should(haveCondition(meta.StalledCondition, metav1.ConditionTrue, BuildNotImplementedReason))
+			Should(haveCondition(meta.ReconcilingCondition, metav1.ConditionTrue, buildv1alpha1.BuildingReason))
 	}, SpecTimeout(30*time.Second))
 
 	It("ignores GitRepository updates that don't change the artifact", func(ctx SpecContext) {

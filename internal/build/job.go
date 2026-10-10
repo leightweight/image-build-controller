@@ -49,6 +49,8 @@ const (
 	SourceRevisionAnnotation = group + "/source-revision"
 	// TagsAnnotation holds the comma-separated tags a build Job pushes.
 	TagsAnnotation = group + "/tags"
+	// ImageAnnotation holds the image name, without a tag, that a build Job pushes.
+	ImageAnnotation = group + "/image"
 	// dockerfileAnnotation carries an inline Dockerfile into the pod through the downward API.
 	dockerfileAnnotation = group + "/dockerfile"
 	// subIDsAnnotation carries the subuid and subgid file content into the pod through the downward API.
@@ -57,8 +59,10 @@ const (
 	// maxJobNameLength keeps Job names valid as label values, because the Job controller labels pods with them.
 	maxJobNameLength = 63
 
-	// buildContainerName names the build container and the build script's $0.
-	buildContainerName = "build"
+	// BuildContainerName names the build container and the build script's $0.
+	BuildContainerName = "build"
+	// FetchContainerName names the init container that downloads the source.
+	FetchContainerName = "fetch"
 	// inlineDockerfileName is the file name an inline Dockerfile gets in the pod.
 	inlineDockerfileName = "Dockerfile"
 
@@ -133,6 +137,7 @@ func Job(ib *buildv1alpha1.ImageBuild, src *Source, cfg Config, key string, star
 	jobAnnotations := map[string]string{
 		BuildKeyAnnotation: key,
 		TagsAnnotation:     strings.Join(tags, ","),
+		ImageAnnotation:    ib.Spec.Push.Image,
 	}
 	if src != nil {
 		jobAnnotations[SourceRevisionAnnotation] = src.Revision
@@ -194,10 +199,12 @@ func Job(ib *buildv1alpha1.ImageBuild, src *Source, cfg Config, key string, star
 
 func fetchContainer(src *Source, cfg Config) corev1.Container {
 	return corev1.Container{
-		Name:  "fetch",
+		Name:  FetchContainerName,
 		Image: cfg.FetchImage,
 		Args:  []string{"fetch", "--url", src.URL, "--digest", src.Digest, "--dest", contextDir},
 		Env:   []corev1.EnvVar{{Name: "TMPDIR", Value: tmpDir}},
+		// A failed fetch reports its error through the termination message, like a failed build.
+		TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 		SecurityContext: &corev1.SecurityContext{
 			AllowPrivilegeEscalation: new(false),
 			ReadOnlyRootFilesystem:   new(true),
@@ -249,9 +256,9 @@ func buildContainer(ib *buildv1alpha1.ImageBuild, src *Source, cfg Config, tags 
 	}
 
 	container := corev1.Container{
-		Name:                     buildContainerName,
+		Name:                     BuildContainerName,
 		Image:                    cfg.BuildKitImage,
-		Command:                  []string{"sh", "-c", buildScript, buildContainerName},
+		Command:                  []string{"sh", "-c", buildScript, BuildContainerName},
 		Args:                     buildctlArgs(ib, src, tags),
 		Env:                      env,
 		SecurityContext:          securityContext,

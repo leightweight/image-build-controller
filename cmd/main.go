@@ -41,10 +41,14 @@ import (
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 
 	buildv1alpha1 "github.com/leightweight/image-build-controller/api/v1alpha1"
+	"github.com/leightweight/image-build-controller/internal/build"
 	"github.com/leightweight/image-build-controller/internal/controller"
 	"github.com/leightweight/image-build-controller/internal/fetch"
 	// +kubebuilder:scaffold:imports
 )
+
+// managerContainerName is the controller's container in config/manager/manager.yaml.
+const managerContainerName = "manager"
 
 var (
 	scheme   = runtime.NewScheme()
@@ -76,6 +80,8 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var tlsOpts []func(*tls.Config)
+	var buildKitImage, fetchImage string
+	var defaultUserNamespaces bool
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -95,6 +101,13 @@ func main() {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	flag.StringVar(&buildKitImage, "buildkit-image", build.DefaultBuildKitImage,
+		"The rootless BuildKit image that runs builds.")
+	flag.StringVar(&fetchImage, "fetch-image", "",
+		"The image for the build pod's fetch init container. "+
+			"Defaults to the controller's own image, found through the POD_NAMESPACE and POD_NAME environment variables.")
+	flag.BoolVar(&defaultUserNamespaces, "default-user-namespaces", true,
+		"Run builds in user namespaces unless an ImageBuild sets spec.userNamespaces.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -182,6 +195,7 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "1739660d.fluxcd.leightweight.io",
+		Cache:                  controller.CacheOptions(),
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
@@ -200,12 +214,31 @@ func main() {
 	}
 
 	ctx := ctrl.SetupSignalHandler()
+	if fetchImage == "" {
+		fetchImage, err = controller.ResolveOwnImage(ctx, mgr.GetAPIReader(),
+			os.Getenv("POD_NAMESPACE"), os.Getenv("POD_NAME"), managerContainerName)
+		if err != nil {
+			setupLog.Error(err, "Failed to find the fetch image")
+			os.Exit(1)
+		}
+	}
+	setupLog.Info("Configured build images", "buildkitImage", buildKitImage, "fetchImage", fetchImage)
+
 	if err := (&controller.ImageBuildReconciler{
 		Client:               mgr.GetClient(),
 		EventRecorder:        mgr.GetEventRecorder(controller.ControllerName),
 		NoCrossNamespaceRefs: aclOptions.NoCrossNamespaceRefs,
+		BuildConfig: build.Config{
+			BuildKitImage:         buildKitImage,
+			FetchImage:            fetchImage,
+			DefaultUserNamespaces: defaultUserNamespaces,
+		},
 	}).SetupWithManager(ctx, mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "imagebuild")
+		os.Exit(1)
+	}
+	if err := (&controller.BuildPodReconciler{Client: mgr.GetClient()}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "buildpod")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

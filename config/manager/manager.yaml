@@ -65,6 +65,16 @@ spec:
           - --health-probe-bind-address=:8081
         image: controller:latest
         name: manager
+        # The controller looks up its own image for the build pods' fetch init container.
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         ports:
         - containerPort: 8081
           name: health

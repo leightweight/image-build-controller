@@ -9,8 +9,6 @@ rules:
   resources:
   - imagebuilds
   verbs:
-  - create
-  - delete
   - get
   - list
   - patch
@@ -19,14 +17,23 @@ rules:
 - apiGroups:
   - build.fluxcd.leightweight.io
   resources:
-  - imagebuilds/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - build.fluxcd.leightweight.io
-  resources:
   - imagebuilds/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - source.toolkit.fluxcd.io
+  resources:
+  - gitrepositories
+  verbs:
+  - get
+  - list
+  - watch

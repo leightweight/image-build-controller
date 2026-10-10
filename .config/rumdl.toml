@@ -1,0 +1,9 @@
+# Write Markdown one sentence per line, never hard-wrapped.
+[MD013]
+line-length = 0
+reflow = true
+reflow-mode = "sentence-per-line"
+
+[per-file-ignores]
+# Rule numbers are stable ids, so gaps are intentional.
+".claude/rules/writing.md" = ["MD029"]

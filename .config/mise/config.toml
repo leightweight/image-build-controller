@@ -1,0 +1,29 @@
+[settings]
+# Required for [deps].
+experimental = true
+
+[tools]
+go = "1.27.1"
+golangci-lint = "2.14.0"
+hk = "2.5.0"
+pkl = "0.32.1"
+rumdl = "0.2.78"
+
+[env]
+RUMDL_CACHE_DIR = "{{config_root}}/.cache/rumdl"
+
+[deps.go]
+auto = true
+
+[tasks.bootstrap]
+description = "Install git hooks"
+run = "hk install --mise"
+
+[tasks.lint]
+description = "Run all linters"
+run = "hk check --all"
+
+[tasks.lint-fix]
+description = "Run all linters and fix issues"
+alias = "fix"
+run = "hk fix --all"

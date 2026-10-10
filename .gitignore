@@ -1,3 +1,5 @@
 # Tool caches and binaries. See .claude/rules/tool-caches.md.
 /.cache/
 /bin/
+# Git worktrees for background agents.
+/.claude/worktrees/

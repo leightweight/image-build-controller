@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+#MISE description="Run the kubebuilder CLI, regenerating code after create commands"
+set -euo pipefail
+
+# kubebuilder create runs `make generate`, and this project has no Makefile.
+if [ "${1:-}" = "create" ]; then
+  kubebuilder "$@" --make=false
+  mise run generate
+else
+  kubebuilder "$@"
+fi

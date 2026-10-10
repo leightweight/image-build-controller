@@ -4,16 +4,30 @@ experimental = true
 
 [tools]
 go = "1.27.1"
+"go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "0.22.0"
 golangci-lint = "2.14.0"
 hk = "2.5.0"
+kind = "0.33.0"
+kubebuilder = "4.16.0"
+kubectl = "1.37.1"
+kustomize = "5.8.3"
 pkl = "0.32.1"
 rumdl = "0.2.78"
+setup-envtest = "0.25.0"
 
 [env]
+_.path = ["{{config_root}}/bin"]
 RUMDL_CACHE_DIR = "{{config_root}}/.cache/rumdl"
 
 [deps.go]
 auto = true
+
+[deps.golangci-lint]
+auto = true
+description = "Build golangci-lint with the plugins in .custom-gcl.yml"
+sources = [".custom-gcl.yml"]
+outputs = ["bin/golangci-lint"]
+run = "golangci-lint custom --destination bin --name golangci-lint"
 
 [tasks.bootstrap]
 description = "Install git hooks"
@@ -27,3 +41,65 @@ run = "hk check --all"
 description = "Run all linters and fix issues"
 alias = "fix"
 run = "hk fix --all"
+
+[tasks.generate]
+description = "Generate deepcopy code, CRDs, and RBAC from the API types and kubebuilder markers"
+run = [
+  'controller-gen object:headerFile="hack/boilerplate.go.txt",year="$(date +%Y)" paths="./..."',
+  'controller-gen rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases',
+]
+
+[tasks.build]
+description = "Build the controller binary into bin/manager"
+depends = ["generate"]
+run = "go build -o bin/manager ./cmd"
+
+[tasks.run]
+description = "Run the controller against the current kubeconfig context"
+depends = ["generate"]
+run = "go run ./cmd"
+
+[tasks.test]
+description = "Run unit and controller tests with envtest"
+depends = ["generate"]
+run = '''
+k8s_version="$(go list -m k8s.io/api | awk '{print $2}' | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/')"
+mkdir -p .cache
+KUBEBUILDER_ASSETS="$(setup-envtest use "$k8s_version" --bin-dir "{{config_root}}/bin" -p path)" \
+  go test $(go list ./... | grep -v /e2e) -coverprofile .cache/cover.out
+'''
+
+[tasks.docker-build]
+description = "Build the controller image"
+usage = 'arg "[image]" default="controller:latest" help="Image name and tag"'
+run = 'docker build -t "${usage_image}" .'
+
+[tasks.install]
+description = "Install the CRDs into the current kubeconfig context"
+depends = ["generate"]
+run = '''
+crds="$(kustomize build config/crd 2>/dev/null || true)"
+if [ -n "$crds" ]; then echo "$crds" | kubectl apply -f -; else echo "No CRDs to install."; fi
+'''
+
+[tasks.uninstall]
+description = "Remove the CRDs from the current kubeconfig context"
+run = '''
+crds="$(kustomize build config/crd 2>/dev/null || true)"
+if [ -n "$crds" ]; then echo "$crds" | kubectl delete --ignore-not-found -f -; else echo "No CRDs to remove."; fi
+'''
+
+[tasks.deploy]
+description = "Deploy the controller to the current kubeconfig context"
+depends = ["generate"]
+usage = 'arg "[image]" default="controller:latest" help="Controller image to deploy"'
+run = '''
+# Set the image in a throwaway overlay so tracked kustomizations stay unchanged.
+rm -rf .cache/deploy && mkdir -p .cache/deploy
+(cd .cache/deploy && kustomize create --resources ../../config/default && kustomize edit set image controller="${usage_image}")
+kustomize build .cache/deploy | kubectl apply -f -
+'''
+
+[tasks.undeploy]
+description = "Remove the controller from the current kubeconfig context"
+run = "kustomize build config/default | kubectl delete --ignore-not-found -f -"

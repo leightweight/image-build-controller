@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#MISE description="Run the end-to-end tests on a kind cluster"
+#MISE depends=["generate"]
+#USAGE flag "--keep-cluster" help="Keep the kind cluster after the tests finish"
+set -euo pipefail
+
+cluster="${KIND_CLUSTER:-image-build-controller-test-e2e}"
+
+if kind get clusters | grep -qx "$cluster"; then
+  echo "Using existing kind cluster '$cluster'."
+else
+  kind create cluster --name "$cluster"
+fi
+
+status=0
+KIND_CLUSTER="$cluster" go test -tags=e2e ./test/e2e/ -v -ginkgo.v || status=$?
+
+if [ "${usage_keep_cluster:-false}" != "true" ]; then
+  kind delete cluster --name "$cluster"
+fi
+
+exit "$status"

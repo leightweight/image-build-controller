@@ -16,7 +16,7 @@ Other people should be able to install and use it, so it must not depend on anyt
 
 - Repository: `github.com/leightweight/image-build-controller`.
 - Go module: `github.com/leightweight/image-build-controller`.
-- API group and version: `image-build.leightweight.io/v1alpha1`.
+- API group and version: `build.fluxcd.leightweight.io/v1alpha1`.
 - Kind: `ImageBuild`.
 - License: Apache-2.0, matching Flux and Kubernetes.
 - Source file copyright header: `Copyright <year> The image-build-controller Authors`.
@@ -31,7 +31,7 @@ Other people should be able to install and use it, so it must not depend on anyt
 ## API
 
 ```yaml
-apiVersion: image-build.leightweight.io/v1alpha1
+apiVersion: build.fluxcd.leightweight.io/v1alpha1
 kind: ImageBuild
 metadata:
   name: foo

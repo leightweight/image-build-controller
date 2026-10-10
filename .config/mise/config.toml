@@ -3,6 +3,7 @@
 experimental = true
 
 [tools]
+flux2 = "2.9.6"
 go = "1.27.1"
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "0.22.0"
 golangci-lint = "2.14.0"

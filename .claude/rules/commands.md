@@ -3,12 +3,44 @@
 Run everything through mise tasks.
 If a task you need doesn't exist, add it to `.config/mise/config.toml` and list it in this file instead of running the command directly.
 
+## Setup
+
 - `mise bootstrap`: set up a fresh checkout.
   It runs the `bootstrap` task, which installs the git hooks.
-- Before `mise run` and `mise exec`, mise downloads Go module dependencies if they changed (`[deps.go]` with `auto = true`).
+- Before `mise run` and `mise exec`, mise runs these `[deps]` providers when their inputs change:
+  - `go` downloads Go module dependencies.
+  - `golangci-lint` builds golangci-lint with the plugins in `.custom-gcl.yml` into `bin/golangci-lint`.
+
+## Development
+
+- `mise run generate`: regenerate deepcopy code, CRDs, and RBAC from the API types and kubebuilder markers.
+- `mise run build`: build the controller into `bin/manager`.
+- `mise run run`: run the controller against the current kubeconfig context.
 - `mise run lint`: run all linters.
 - `mise run lint-fix` (alias `fix`): run all linters and apply fixes.
-- `mise tasks ls`: list all available tasks.
+- `mise run kubebuilder <args>`: run the kubebuilder CLI.
+  For `create` commands, it skips kubebuilder's `make generate` step and runs `mise run generate` instead.
+  Put `--` before `--help`, as in `mise run kubebuilder -- create api --help`, or mise shows its own help.
 
-`.config/mise/config.toml` pins the tool versions.
-Linter configuration lives in `.config/`, in `hk.pkl` and `rumdl.toml`.
+## Testing
+
+- `mise run test`: run unit and controller tests with envtest.
+  The envtest binaries go in `bin/k8s/`, where the generated test suites also look when an IDE runs them.
+  The coverage profile goes in `.cache/cover.out`.
+- `mise run test:e2e`: create a kind cluster, run the end-to-end tests, and delete the cluster.
+  Pass `--keep-cluster` to keep it for debugging.
+
+## Cluster
+
+These tasks act on the current kubeconfig context.
+
+- `mise run docker-build [image]`: build the controller image.
+- `mise run install` and `mise run uninstall`: add or remove the CRDs.
+- `mise run deploy [image]` and `mise run undeploy`: add or remove the whole controller.
+
+## Configuration
+
+`.config/mise/config.toml` pins the tool versions and defines most tasks.
+File tasks live in `.config/mise/tasks/`.
+Linter configuration lives in `.config/hk.pkl`, `.config/rumdl.toml`, `.golangci.yml`, and `.custom-gcl.yml`.
+When you change the golangci-lint version in `[tools]`, change `version` in `.custom-gcl.yml` to match.

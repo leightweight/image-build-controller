@@ -449,9 +449,26 @@ Build pods mount the registry Secret directly.
 
 ## Distribution
 
-- Helm chart: the main documented install method, published as an OCI artifact to `ghcr.io/leightweight`.
+- Helm chart: the main documented install method, published as an OCI artifact at `oci://ghcr.io/leightweight/charts/image-build-controller`.
 - `install.yaml`: a release asset generated from the kubebuilder Kustomize config, available but not the main documented method.
-- Controller images: multi-arch, built and published by goreleaser.
+- Controller images: `ghcr.io/leightweight/image-build-controller`, for `linux/amd64` and `linux/arm64`, built and published by goreleaser.
+
+### Releases
+
+A maintainer releases by pushing a `v*` tag, such as `v0.1.0`.
+The tag triggers `.github/workflows/release.yml`, which:
+
+1. runs goreleaser, which cross-compiles the manager, builds and pushes the multi-arch image with an SBOM, signs it, and creates the GitHub release with `install.yaml` and `checksums.txt`;
+2. packages the Helm chart with the tag's version as both the chart version and `appVersion`, pushes it, and signs it.
+
+The chart version always matches the controller version.
+The workflow signs the image and the chart with cosign and no keys, using its GitHub Actions OIDC identity.
+It uses cosign v3's default Sigstore bundle format, because v3 deprecates the older format.
+The release notes are GitHub's generated notes, which list the merged PRs.
+
+`Dockerfile.release` builds the release image from goreleaser's prebuilt binaries, so it needs no emulation for other platforms.
+The root `Dockerfile` builds from source for development and the end-to-end tests.
+`mise run release:snapshot` builds the release locally without publishing it, and the Lint job runs `goreleaser check`.
 
 ### Helm chart
 

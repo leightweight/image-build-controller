@@ -1,0 +1,78 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: image-build-controller
+dist: .cache/dist
+
+before:
+  hooks:
+    - mise run installer {{ .Version }}
+
+builds:
+  - id: manager
+    main: ./cmd
+    binary: manager
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+# The release ships the controller as an image, the Helm chart, and install.yaml, not as a binary.
+archives:
+  - formats:
+      - none
+
+dockers_v2:
+  - images:
+      - ghcr.io/leightweight/image-build-controller
+    tags:
+      - "{{ .Version }}"
+    dockerfile: Dockerfile.release
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      org.opencontainers.image.title: image-build-controller
+      org.opencontainers.image.description: Builds container images from Flux sources
+      org.opencontainers.image.source: https://github.com/leightweight/image-build-controller
+      org.opencontainers.image.licenses: Apache-2.0
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.created: "{{ .CommitDate }}"
+    annotations:
+      org.opencontainers.image.source: https://github.com/leightweight/image-build-controller
+      org.opencontainers.image.licenses: Apache-2.0
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+
+# Keyless signing with the GitHub Actions OIDC identity.
+docker_signs:
+  - cmd: cosign
+    args:
+      - sign
+      - --yes
+      - ${artifact}@${digest}
+
+checksum:
+  name_template: checksums.txt
+  extra_files:
+    - glob: .cache/release/install.yaml
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+changelog:
+  use: github-native
+
+release:
+  prerelease: auto
+  extra_files:
+    - glob: .cache/release/install.yaml

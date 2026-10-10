@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      # Create the GitHub release.
+      contents: write
+      # Push the image and the chart to GHCR.
+      packages: write
+      # Sign the image and the chart with cosign's keyless signing.
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # goreleaser needs the tags to find the previous release.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.10.7
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Release the image and install.yaml
+        run: goreleaser release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Release the Helm chart
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: |
+          set -o pipefail
+          version="${GITHUB_REF_NAME#v}"
+          chart=ghcr.io/leightweight/charts/image-build-controller
+          helm package charts/chart --version "$version" --app-version "$version" --destination .cache/release
+          echo "$GITHUB_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          helm push ".cache/release/image-build-controller-${version}.tgz" oci://ghcr.io/leightweight/charts 2>&1 | tee .cache/release/helm-push.log
+          digest="$(sed -n 's/^Digest: //p' .cache/release/helm-push.log)"
+          if [ -z "$digest" ]; then echo "::error::helm push printed no digest."; exit 1; fi
+          cosign sign --yes "${chart}@${digest}"

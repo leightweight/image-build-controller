@@ -42,10 +42,20 @@ These tasks act on the current kubeconfig context.
 - `mise run install` and `mise run uninstall`: add or remove the CRDs.
 - `mise run deploy [image]` and `mise run undeploy`: add or remove the whole controller.
 
+## Releases
+
+- `mise run installer <version>`: build the release `install.yaml` into `.cache/release/`.
+  goreleaser runs it before each release.
+- `mise run release:snapshot`: build the release binaries and per-platform images locally without publishing them.
+  The output goes in `.cache/dist/`.
+- Pushing a `v*` tag publishes a release through `.github/workflows/release.yml`.
+  Only push release tags when the user asks.
+
 ## Configuration
 
 `.config/mise/config.toml` pins the tool versions and defines most tasks.
 File tasks live in `.config/mise/tasks/`.
 Linter configuration lives in `.config/hk.pkl`, `.config/rumdl.toml`, `.golangci.yml`, and `.custom-gcl.yml`.
-The `helm` step in `.config/hk.pkl` runs `helm lint --strict` on the chart.
+The `helm` step in `.config/hk.pkl` runs `helm lint --strict` on the chart, and the `goreleaser` step runs `goreleaser check`.
+The release configuration lives in `.goreleaser.yaml` and `Dockerfile.release`.
 When you change the golangci-lint version in `[tools]`, change `version` in `.custom-gcl.yml` to match.

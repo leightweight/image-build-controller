@@ -4,6 +4,10 @@ import "package://github.com/jdx/hk/releases/download/v2.5.0/hk@2.5.0#/Builtins.
 local linters = new Mapping<String, Step> {
     ["golangci-lint"] = Builtins.golangci_lint
     ["rumdl"] = Builtins.rumdl
+    ["goreleaser"] {
+        glob = ".goreleaser.yaml"
+        check = "goreleaser check"
+    }
     ["helm"] {
         glob = "charts/**"
         check = "helm lint --strict charts/chart"

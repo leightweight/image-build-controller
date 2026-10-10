@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
 	"github.com/go-logr/logr"
 
@@ -36,10 +35,6 @@ import (
 const (
 	// DefaultRetries matches the default artifact fetch retries of the Flux controllers.
 	DefaultRetries = 9
-
-	// subIDs maps the build user's subordinate IDs inside the 65536 IDs of a user-namespaced pod.
-	// The rootless BuildKit image's own range starts at 100000, outside the pod's IDs.
-	subIDs = "user:1001:64535\n"
 )
 
 // Options configures a fetch.
@@ -50,14 +45,11 @@ type Options struct {
 	Digest string
 	// Dir is the directory to extract the artifact into.
 	Dir string
-	// SubIDDir, when set, is the directory to write the subuid and subgid files into.
-	SubIDDir string
 	// Retries is how many times to retry a failed download.
 	Retries int
 }
 
 // Run downloads the artifact, verifies its digest, and extracts it into opts.Dir.
-// When opts.SubIDDir is set, it also writes the subuid and subgid files for builds in user namespaces.
 // Retry messages go to the logger in ctx, if any.
 func Run(ctx context.Context, opts Options) error {
 	if opts.URL == "" {
@@ -86,24 +78,6 @@ func Run(ctx context.Context, opts Options) error {
 		}
 		return fmt.Errorf("could not fetch artifact %s: %w", opts.URL, err)
 	}
-
-	if opts.SubIDDir != "" {
-		if err := writeSubIDs(opts.SubIDDir); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func writeSubIDs(dir string) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("could not create subordinate ID directory: %w", err)
-	}
-	for _, name := range []string{"subuid", "subgid"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(subIDs), 0o644); err != nil {
-			return fmt.Errorf("could not write %s: %w", name, err)
-		}
-	}
 	return nil
 }
 
@@ -115,8 +89,6 @@ func Main(ctx context.Context, args []string, stderr io.Writer) int {
 	flags.StringVar(&opts.URL, "url", "", "The artifact URL from the source's status.artifact.url.")
 	flags.StringVar(&opts.Digest, "digest", "", "The artifact digest from the source's status.artifact.digest.")
 	flags.StringVar(&opts.Dir, "dest", "", "The directory to extract the artifact into.")
-	flags.StringVar(&opts.SubIDDir, "subid-dir", "",
-		"If set, the directory to write subuid and subgid files into for builds in user namespaces.")
 	flags.IntVar(&opts.Retries, "retries", DefaultRetries, "How many times to retry a failed download.")
 	if err := flags.Parse(args); err != nil {
 		return 2

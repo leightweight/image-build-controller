@@ -196,29 +196,6 @@ var _ = Describe("Run", func() {
 		Expect(filepath.Join(filepath.Dir(dest), "escaped")).NotTo(BeAnExistingFile())
 	})
 
-	It("writes subuid and subgid files when asked", func() {
-		data, digest := archive(tarEntry{name: dockerfileName, body: dockerfileBody})
-		subIDDir := filepath.Join(GinkgoT().TempDir(), "subids")
-
-		Expect(Run(ctx, Options{URL: serveArchive(data), Digest: digest, Dir: dest, SubIDDir: subIDDir})).To(Succeed())
-
-		for _, name := range []string{"subuid", "subgid"} {
-			path := filepath.Join(subIDDir, name)
-			Expect(os.ReadFile(path)).To(BeEquivalentTo("user:1001:64535\n"), name)
-			info, err := os.Stat(path)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(info.Mode().Perm()).To(Equal(os.FileMode(0o644)), name)
-		}
-	})
-
-	It("doesn't write subuid and subgid files by default", func() {
-		data, digest := archive(tarEntry{name: dockerfileName, body: dockerfileBody})
-
-		Expect(Run(ctx, Options{URL: serveArchive(data), Digest: digest, Dir: dest})).To(Succeed())
-
-		Expect(os.ReadDir(dest)).To(HaveLen(1))
-	})
-
 	DescribeTable("requires its inputs",
 		func(opts Options, message string) {
 			Expect(Run(ctx, opts)).To(MatchError(message))
@@ -234,16 +211,14 @@ var _ = Describe("Main", func() {
 	It("fetches with the values from its flags", func() {
 		data, digest := archive(tarEntry{name: dockerfileName, body: dockerfileBody})
 		dest := filepath.Join(GinkgoT().TempDir(), "context")
-		subIDDir := filepath.Join(GinkgoT().TempDir(), "subids")
 		var stderr bytes.Buffer
 
 		code := Main(context.Background(), []string{
-			urlFlag, serveArchive(data), "--digest", digest, "--dest", dest, "--subid-dir", subIDDir, "--retries", "0",
+			urlFlag, serveArchive(data), "--digest", digest, "--dest", dest, "--retries", "0",
 		}, &stderr)
 
 		Expect(code).To(Equal(0), stderr.String())
 		Expect(filepath.Join(dest, dockerfileName)).To(BeAnExistingFile())
-		Expect(filepath.Join(subIDDir, "subuid")).To(BeAnExistingFile())
 	})
 
 	It("exits with 1 and explains why when the fetch fails", func() {

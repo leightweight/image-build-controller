@@ -16,6 +16,9 @@ If a task you need doesn't exist, add it to `.config/mise/config.toml` and list 
 - `mise run generate`: regenerate deepcopy code, CRDs, and RBAC from the API types and kubebuilder markers.
 - `mise run build`: build the controller into `bin/manager`.
 - `mise run run`: run the controller against the current kubeconfig context.
+- `mise run chart`: regenerate the Helm chart in `charts/chart` from the Kustomize config.
+  Run it after changing anything in `config/`, including through `mise run generate`.
+  CI fails when the committed chart is out of date.
 - `mise run lint`: run all linters.
 - `mise run lint-fix` (alias `fix`): run all linters and apply fixes.
 - `mise run kubebuilder <args>`: run the kubebuilder CLI.
@@ -27,7 +30,8 @@ If a task you need doesn't exist, add it to `.config/mise/config.toml` and list 
 - `mise run test`: run unit and controller tests with envtest.
   The envtest binaries go in `bin/k8s/`, where the generated test suites also look when an IDE runs them.
   The coverage profile goes in `.cache/cover.out`.
-- `mise run test:e2e`: create a kind cluster, run the end-to-end tests, and delete the cluster.
+- `mise run test:e2e`: regenerate the chart, create a kind cluster, run the end-to-end tests, and delete the cluster.
+  The tests install the controller with the Helm chart.
   Pass `--keep-cluster` to keep it for debugging.
 
 ## Cluster
@@ -43,4 +47,5 @@ These tasks act on the current kubeconfig context.
 `.config/mise/config.toml` pins the tool versions and defines most tasks.
 File tasks live in `.config/mise/tasks/`.
 Linter configuration lives in `.config/hk.pkl`, `.config/rumdl.toml`, `.golangci.yml`, and `.custom-gcl.yml`.
+The `helm` step in `.config/hk.pkl` runs `helm lint --strict` on the chart.
 When you change the golangci-lint version in `[tools]`, change `version` in `.custom-gcl.yml` to match.

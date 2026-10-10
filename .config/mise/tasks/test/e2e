@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #MISE description="Run the end-to-end tests on a kind cluster"
-#MISE depends=["generate"]
+#MISE depends=["chart"]
 #USAGE flag "--keep-cluster" help="Keep the kind cluster after the tests finish"
 set -euo pipefail
 

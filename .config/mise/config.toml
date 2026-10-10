@@ -7,6 +7,7 @@ flux2 = "2.9.6"
 go = "1.27.1"
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "0.22.0"
 golangci-lint = "2.14.0"
+helm = "4.3.0"
 hk = "2.5.0"
 kind = "0.33.0"
 kubebuilder = "4.16.0"
@@ -68,6 +69,17 @@ k8s_version="$(go list -m k8s.io/api | awk '{print $2}' | sed -E 's/^v?[0-9]+\.(
 mkdir -p .cache
 KUBEBUILDER_ASSETS="$(setup-envtest use "$k8s_version" --bin-dir "{{config_root}}/bin" -p path)" \
   go test $(go list ./... | grep -v /e2e) -coverprofile .cache/cover.out
+'''
+
+[tasks.chart]
+description = "Regenerate the Helm chart in charts/chart from the Kustomize config"
+depends = ["generate"]
+run = '''
+mkdir -p .cache
+kustomize build config/default > .cache/install.yaml
+kubebuilder edit --plugins=helm/v2-alpha --manifests=.cache/install.yaml --output-dir=charts
+# The plugin adds a Makefile-based chart workflow on every run; the end-to-end test covers the chart instead.
+rm -f .github/workflows/test-chart.yml
 '''
 
 [tasks.docker-build]

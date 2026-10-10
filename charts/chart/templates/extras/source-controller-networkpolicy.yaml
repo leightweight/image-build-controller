@@ -1,0 +1,29 @@
+{{- /*
+Written by hand: `mise run chart` keeps this file.
+It lives outside the release namespace, so it can't come from the Kustomize config.
+*/ -}}
+{{- if .Values.sourceControllerNetworkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "image-build-controller.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  name: {{ include "image-build-controller.resourceName" (dict "suffix" "allow-image-builds" "context" $) }}
+  namespace: {{ .Values.sourceControllerNetworkPolicy.namespace }}
+spec:
+  podSelector:
+    {{- toYaml .Values.sourceControllerNetworkPolicy.podSelector | nindent 4 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/managed-by: image-build-controller
+      ports:
+        - protocol: TCP
+          port: {{ .Values.sourceControllerNetworkPolicy.port }}
+{{- end }}

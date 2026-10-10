@@ -224,6 +224,7 @@ The pod has two containers:
 
 1. An init container that runs the controller image with the `fetch` subcommand.
    It uses `fluxcd/pkg/http/fetch` to download the Flux source artifact, verify its digest, and extract it into an `emptyDir` volume.
+   For builds with user namespaces, it also writes the `subuid` and `subgid` files described in [User namespaces](#user-namespaces).
 2. A build container that runs rootless BuildKit in daemonless mode with `buildctl-daemonless.sh`.
    It builds from the extracted context and pushes to the registry.
 
@@ -238,6 +239,20 @@ A controller flag sets the BuildKit image, and each controller release pins a de
 - The build container uses `terminationMessagePolicy: FallbackToLogsOnError`.
   Kubernetes copies the tail of the build log into the termination message, and the controller puts it in the condition message and a Kubernetes Event without needing permission to read logs.
 
+### Build pod finalizer
+
+Some clusters delete finished pods almost immediately.
+With `--terminated-pod-gc-threshold=1` on kube-controller-manager, a finished build pod disappears within one 20-second garbage collection cycle, often before the controller reads its termination message.
+
+The Job's pod template carries the `build.fluxcd.leightweight.io/termination-message` finalizer, so Kubernetes can't delete a build pod until the controller releases it:
+
+1. The controller watches build pods through their `app.kubernetes.io/managed-by: image-build-controller` label.
+2. When a build pod terminates, the controller copies its termination message into the `ImageBuild` status, the condition message, and an Event.
+3. The controller then removes the finalizer.
+
+The controller also removes the finalizer from pods of Jobs that are being deleted, so history cleanup and `ImageBuild` deletion don't leave pods stuck.
+If the controller is uninstalled while build pods exist, they stay until someone removes the finalizer, so the uninstall docs must cover it.
+
 ### History
 
 Kubernetes deletes a build's Jobs through owner references when the `ImageBuild` is deleted.
@@ -247,15 +262,30 @@ Kubernetes deletes a build's Jobs through owner references when the `ImageBuild`
 
 ### Build pods
 
-Rootless BuildKit requires `seccomp` and `apparmor` to be Unconfined.
-The baseline Pod Security Standard rejects that, so namespaces running builds must allow the `privileged` level.
+Rootless BuildKit needs these settings in every build pod:
+
+- seccomp `Unconfined`, because the default profile blocks rootlesskit from creating its namespaces;
+- AppArmor `Unconfined` on nodes that run AppArmor, because the default profile blocks the mounts BuildKit needs.
+
+The baseline Pod Security Standard rejects both, so namespaces running builds must allow the `privileged` level.
 The install docs must state this requirement.
 
-Build pods have these restrictions:
+Each `RUN` step normally gets its own process namespace, which needs a new `/proc` mount.
+Kubernetes masks parts of a container's `/proc`, and the kernel refuses that mount from inside a masked `/proc`.
+The build pod handles this differently with and without [user namespaces](#user-namespaces):
+
+- With user namespaces, the container sets `procMount: Unmasked`, and `RUN` steps keep their own process namespace.
+  Kubernetes only allows `procMount: Unmasked` together with `hostUsers: false`.
+- Without user namespaces, BuildKit runs with `--oci-worker-no-process-sandbox`, and `RUN` steps share the BuildKit daemon's process namespace.
+  A `RUN` step can then see and signal the daemon, which is weaker isolation.
+
+Build pods also have these restrictions:
 
 - run as non-root (UID 1000);
-- no service account token mounted;
-- read-only root filesystem except for the BuildKit state volume.
+- no service account token mounted.
+
+A read-only root filesystem is not yet tested.
+See [Open risks](#open-risks).
 
 ### User namespaces
 
@@ -264,8 +294,13 @@ If a build escapes its container, it lands on the node as an unprivileged user.
 It does not remove the `privileged` Pod Security requirement.
 It requires Kubernetes 1.33 or later, Linux 6.3 or later, and containerd 2.0 or later or CRI-O on the nodes.
 It is on by default, and the `--default-user-namespaces` controller flag changes the default.
-Support depends on a test confirming that rootless BuildKit works inside a user namespace, possibly with `--oci-worker-no-process-sandbox`.
-If it doesn't work, we drop the field and document why.
+The install docs must call out the default and the node requirements.
+
+A user-namespaced pod has exactly 65536 user IDs.
+The rootless BuildKit image's `/etc/subuid` and `/etc/subgid` start at 100000, outside that range, so rootlesskit fails to map its IDs.
+The init container writes replacements containing `user:1001:64535` into a shared `emptyDir`, and the build container mounts them over `/etc/subuid` and `/etc/subgid` with `subPath`.
+
+This setup built an image successfully on kind and on Talos 1.13 with Kubernetes 1.36, Linux 6.18, and containerd 2.2.
 
 ### Network access to source-controller
 
@@ -279,6 +314,7 @@ The controller watches `ImageBuild` resources across the whole cluster with thes
 
 - `ImageBuild`: get, list, watch, update, patch, and update status;
 - `Job`: create, delete, get, list, and watch;
+- `Pod`: get, list, watch, and patch, to read termination messages and remove the [build pod finalizer](#build-pod-finalizer);
 - `GitRepository`: get, list, and watch;
 - `Event`: create and patch.
 
@@ -332,5 +368,5 @@ GitHub Actions runs:
 
 ## Open risks
 
-1. Rootless BuildKit inside user-namespaced pods.
-2. Whether notification-controller accepts events from custom kinds.
+1. Whether notification-controller accepts events from custom kinds.
+2. Whether rootless BuildKit works with a read-only root filesystem, and which paths need writable volumes.

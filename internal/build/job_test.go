@@ -178,6 +178,7 @@ var _ = Describe("Job", func() {
 				BuildKeyAnnotation:       testKey,
 				SourceRevisionAnnotation: "main@sha1:" + sha1Hash,
 				TagsAnnotation:           "main-0123456-1760000000",
+				ImageAnnotation:          "registry.example/team/app",
 			}))
 			Expect(job.OwnerReferences).To(ConsistOf(metav1.OwnerReference{
 				APIVersion:         "build.fluxcd.leightweight.io/v1alpha1",
@@ -206,7 +207,7 @@ var _ = Describe("Job", func() {
 		})
 
 		It("fetches the source into the context directory with a locked-down init container", func() {
-			fetch := container(job, "fetch")
+			fetch := container(job, FetchContainerName)
 			Expect(fetch.Image).To(Equal(jobConfig.FetchImage))
 			Expect(fetch.Args).To(Equal([]string{
 				"fetch", "--url", testSource().URL, "--digest", "sha256:abc", "--dest", "/workspace/context",
@@ -217,10 +218,11 @@ var _ = Describe("Job", func() {
 			Expect(fetch.SecurityContext.SeccompProfile.Type).To(Equal(corev1.SeccompProfileTypeRuntimeDefault))
 			Expect(envValue(fetch, "TMPDIR")).To(Equal("/tmp"))
 			Expect(mountPaths(fetch)).To(ConsistOf("/workspace/context", "/tmp"))
+			Expect(fetch.TerminationMessagePolicy).To(Equal(corev1.TerminationMessageFallbackToLogsOnError))
 		})
 
 		It("unmasks /proc and keeps the process sandbox", func() {
-			build := container(job, buildContainerName)
+			build := container(job, BuildContainerName)
 			Expect(build.SecurityContext.ProcMount).To(Equal(new(corev1.UnmaskedProcMount)))
 			Expect(build.SecurityContext.SeccompProfile.Type).To(Equal(corev1.SeccompProfileTypeUnconfined))
 			Expect(build.SecurityContext.AppArmorProfile.Type).To(Equal(corev1.AppArmorProfileTypeUnconfined))
@@ -229,7 +231,7 @@ var _ = Describe("Job", func() {
 
 		It("mounts subuid and subgid files from the downward API", func() {
 			Expect(job.Spec.Template.Annotations).To(HaveKeyWithValue(subIDsAnnotation, "user:1001:64535\n"))
-			build := container(job, buildContainerName)
+			build := container(job, BuildContainerName)
 			Expect(build.VolumeMounts).To(ContainElements(
 				corev1.VolumeMount{Name: subIDsVolume, MountPath: "/etc/subuid", SubPath: "subuid", ReadOnly: true},
 				corev1.VolumeMount{Name: subIDsVolume, MountPath: "/etc/subgid", SubPath: "subgid", ReadOnly: true},
@@ -252,7 +254,7 @@ var _ = Describe("Job", func() {
 		})
 
 		It("runs buildctl through the script that reports the digest", func() {
-			build := container(job, buildContainerName)
+			build := container(job, BuildContainerName)
 			Expect(build.Image).To(Equal(DefaultBuildKitImage))
 			Expect(build.Command).To(Equal([]string{"sh", "-c", buildScript, "build"}))
 			Expect(buildScript).To(ContainSubstring(`buildctl-daemonless.sh "$@" --metadata-file /workspace/output/metadata.json`))
@@ -261,7 +263,7 @@ var _ = Describe("Job", func() {
 		})
 
 		It("builds the Dockerfile from the source and pushes every tag with the cache", func() {
-			Expect(container(job, buildContainerName).Args).To(Equal([]string{
+			Expect(container(job, BuildContainerName).Args).To(Equal([]string{
 				"build",
 				"--frontend", "dockerfile.v0",
 				"--local", contextArg,
@@ -274,7 +276,7 @@ var _ = Describe("Job", func() {
 		})
 
 		It("mounts the registry credentials as a Docker config", func() {
-			build := container(job, buildContainerName)
+			build := container(job, BuildContainerName)
 			Expect(envValue(build, "DOCKER_CONFIG")).To(Equal("/workspace/docker-config"))
 			Expect(build.VolumeMounts).To(ContainElement(corev1.VolumeMount{
 				Name: "docker-config", MountPath: "/workspace/docker-config", ReadOnly: true,
@@ -289,7 +291,7 @@ var _ = Describe("Job", func() {
 		})
 
 		It("gives BuildKit writable state, output, and temporary directories", func() {
-			Expect(mountPaths(container(job, buildContainerName))).To(ContainElements(
+			Expect(mountPaths(container(job, BuildContainerName))).To(ContainElements(
 				"/home/user/.local/share/buildkit", "/workspace/output", "/tmp",
 			))
 		})
@@ -307,7 +309,7 @@ var _ = Describe("Job", func() {
 
 		It("shares the daemon's process namespace instead of unmasking /proc", func() {
 			Expect(job.Spec.Template.Spec.HostUsers).To(BeNil())
-			build := container(job, buildContainerName)
+			build := container(job, BuildContainerName)
 			Expect(build.SecurityContext.ProcMount).To(BeNil())
 			Expect(envValue(build, "BUILDKITD_FLAGS")).To(Equal("--oci-worker-no-process-sandbox"))
 			Expect(build.SecurityContext.SeccompProfile.Type).To(Equal(corev1.SeccompProfileTypeUnconfined))
@@ -317,7 +319,7 @@ var _ = Describe("Job", func() {
 		It("doesn't mount subuid and subgid files", func() {
 			Expect(job.Spec.Template.Annotations).NotTo(HaveKey(subIDsAnnotation))
 			Expect(volumeNames(job)).NotTo(ContainElement(subIDsVolume))
-			Expect(mountPaths(container(job, buildContainerName))).NotTo(ContainElements("/etc/subuid", "/etc/subgid"))
+			Expect(mountPaths(container(job, BuildContainerName))).NotTo(ContainElements("/etc/subuid", "/etc/subgid"))
 		})
 	})
 
@@ -352,10 +354,10 @@ var _ = Describe("Job", func() {
 		It("fetches the source and reads the Dockerfile from the downward API", func() {
 			Expect(job.Spec.Template.Spec.InitContainers).To(HaveLen(1))
 			Expect(job.Spec.Template.Annotations).To(HaveKeyWithValue(dockerfileAnnotation, "FROM alpine:3.22\nRUN apk add curl\n"))
-			args := container(job, buildContainerName).Args
+			args := container(job, BuildContainerName).Args
 			Expect(argValues(args, "--local")).To(Equal([]string{contextArg, "dockerfile=/workspace/dockerfile"}))
 			Expect(argValues(args, "--opt")).To(ContainElement("filename=Dockerfile"))
-			Expect(container(job, buildContainerName).VolumeMounts).To(ContainElement(corev1.VolumeMount{
+			Expect(container(job, BuildContainerName).VolumeMounts).To(ContainElement(corev1.VolumeMount{
 				Name: "dockerfile", MountPath: "/workspace/dockerfile", ReadOnly: true,
 			}))
 			Expect(job.Spec.Template.Spec.Volumes).To(ContainElement(corev1.Volume{
@@ -385,7 +387,7 @@ var _ = Describe("Job", func() {
 				Expect(job.Spec.Template.Spec.InitContainers).To(BeEmpty())
 				Expect(job.Annotations).NotTo(HaveKey(SourceRevisionAnnotation))
 				Expect(job.Annotations).To(HaveKeyWithValue(TagsAnnotation, "build-1760000000"))
-				Expect(argValues(container(job, buildContainerName).Args, "--local")).To(Equal([]string{
+				Expect(argValues(container(job, BuildContainerName).Args, "--local")).To(Equal([]string{
 					contextArg, "dockerfile=/workspace/dockerfile",
 				}))
 			})
@@ -393,10 +395,10 @@ var _ = Describe("Job", func() {
 			It("sets up the matching isolation", func() {
 				if userNS {
 					Expect(job.Spec.Template.Spec.HostUsers).To(Equal(new(false)))
-					Expect(mountPaths(container(job, buildContainerName))).To(ContainElements("/etc/subuid", "/etc/subgid"))
+					Expect(mountPaths(container(job, BuildContainerName))).To(ContainElements("/etc/subuid", "/etc/subgid"))
 				} else {
 					Expect(job.Spec.Template.Spec.HostUsers).To(BeNil())
-					Expect(envValue(container(job, buildContainerName), "BUILDKITD_FLAGS")).To(Equal("--oci-worker-no-process-sandbox"))
+					Expect(envValue(container(job, BuildContainerName), "BUILDKITD_FLAGS")).To(Equal("--oci-worker-no-process-sandbox"))
 				}
 			})
 		})
@@ -408,7 +410,7 @@ var _ = Describe("Job", func() {
 			ib.Spec.Context = "services/api"
 			ib.Spec.Dockerfile.Path = "docker/api.Dockerfile"
 			ib.Spec.Target = "runtime"
-			args := container(renderJob(ib, testSource(), jobConfig), buildContainerName).Args
+			args := container(renderJob(ib, testSource(), jobConfig), BuildContainerName).Args
 			Expect(argValues(args, "--local")).To(Equal([]string{
 				"context=/workspace/context/services/api", "dockerfile=/workspace/context",
 			}))
@@ -419,7 +421,7 @@ var _ = Describe("Job", func() {
 			ib := sourceImageBuild()
 			ib.Spec.BuildArgs = map[string]string{"ZED": "z", "ALPHA": "a=b", "MIDDLE": "with space"}
 			for range 5 {
-				Expect(argValues(container(renderJob(ib, testSource(), jobConfig), buildContainerName).Args, "--opt")).To(Equal([]string{
+				Expect(argValues(container(renderJob(ib, testSource(), jobConfig), BuildContainerName).Args, "--opt")).To(Equal([]string{
 					"filename=Dockerfile", "build-arg:ALPHA=a=b", "build-arg:MIDDLE=with space", "build-arg:ZED=z",
 				}))
 			}
@@ -429,7 +431,7 @@ var _ = Describe("Job", func() {
 			ib := sourceImageBuild()
 			ib.Spec.Push.Tags = []string{latestTag, "{{ .Branch }}-{{ .ShortSHA }}"}
 			job := renderJob(ib, testSource(), jobConfig)
-			Expect(argValues(container(job, buildContainerName).Args, "--output")).To(Equal([]string{
+			Expect(argValues(container(job, BuildContainerName).Args, "--output")).To(Equal([]string{
 				`type=image,"name=` + testImage + `:latest,` + testImage + `:main-0123456",push=true`,
 			}))
 			Expect(job.Annotations).To(HaveKeyWithValue(TagsAnnotation, "latest,main-0123456"))
@@ -438,7 +440,7 @@ var _ = Describe("Job", func() {
 		It("marks the registry and cache insecure", func() {
 			ib := sourceImageBuild()
 			ib.Spec.Push.Insecure = true
-			args := container(renderJob(ib, testSource(), jobConfig), buildContainerName).Args
+			args := container(renderJob(ib, testSource(), jobConfig), BuildContainerName).Args
 			Expect(argValues(args, "--output")).To(ConsistOf(HaveSuffix(",push=true,registry.insecure=true")))
 			Expect(argValues(args, "--export-cache")).To(ConsistOf(
 				"type=registry,ref=" + testImage + ":buildcache,registry.insecure=true,mode=max",
@@ -451,14 +453,14 @@ var _ = Describe("Job", func() {
 		It("leaves out the cache when it's disabled", func() {
 			ib := sourceImageBuild()
 			ib.Spec.Cache.Enabled = new(false)
-			args := container(renderJob(ib, testSource(), jobConfig), buildContainerName).Args
+			args := container(renderJob(ib, testSource(), jobConfig), BuildContainerName).Args
 			Expect(args).NotTo(ContainElements("--export-cache", "--import-cache"))
 		})
 
 		It("uses the cache when the setting is unset", func() {
 			ib := sourceImageBuild()
 			ib.Spec.Cache.Enabled = nil
-			Expect(container(renderJob(ib, testSource(), jobConfig), buildContainerName).Args).To(ContainElement("--export-cache"))
+			Expect(container(renderJob(ib, testSource(), jobConfig), BuildContainerName).Args).To(ContainElement("--export-cache"))
 		})
 
 		It("works without registry credentials", func() {
@@ -466,7 +468,7 @@ var _ = Describe("Job", func() {
 			ib.Spec.Push.SecretRef = nil
 			job := renderJob(ib, testSource(), jobConfig)
 			expectValid(job)
-			Expect(hasEnv(container(job, buildContainerName), "DOCKER_CONFIG")).To(BeFalse())
+			Expect(hasEnv(container(job, BuildContainerName), "DOCKER_CONFIG")).To(BeFalse())
 			Expect(volumeNames(job)).NotTo(ContainElement("docker-config"))
 		})
 
@@ -480,7 +482,7 @@ var _ = Describe("Job", func() {
 			ib.Spec.Tolerations = []corev1.Toleration{{Key: "builds", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule}}
 			job := renderJob(ib, testSource(), jobConfig)
 			expectValid(job)
-			Expect(container(job, buildContainerName).Resources).To(Equal(*ib.Spec.Resources))
+			Expect(container(job, BuildContainerName).Resources).To(Equal(*ib.Spec.Resources))
 			Expect(job.Spec.Template.Spec.NodeSelector).To(Equal(ib.Spec.NodeSelector))
 			Expect(job.Spec.Template.Spec.Tolerations).To(Equal(ib.Spec.Tolerations))
 		})

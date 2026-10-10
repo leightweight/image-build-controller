@@ -5,6 +5,25 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
   - build.fluxcd.leightweight.io
   resources:
   - imagebuilds
@@ -14,6 +33,12 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - build.fluxcd.leightweight.io
+  resources:
+  - imagebuilds/finalizers
+  verbs:
+  - update
 - apiGroups:
   - build.fluxcd.leightweight.io
   resources:

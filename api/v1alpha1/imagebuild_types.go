@@ -33,6 +33,16 @@ const (
 
 	// SourceNotReadyReason means the referenced source has no artifact the controller can build from yet.
 	SourceNotReadyReason = "SourceNotReady"
+
+	// BuildingReason means a build Job for the current build key is running.
+	BuildingReason = "Building"
+
+	// WaitingForBuildReason means a build Job for an older build key is running,
+	// and concurrencyPolicy Wait makes the next build wait for it to finish.
+	WaitingForBuildReason = "WaitingForBuild"
+
+	// InvalidTagsReason means push.tags can't be rendered into valid image tags.
+	InvalidTagsReason = "InvalidTags"
 )
 
 // ConcurrencyPolicy controls what happens when a new build is needed while one is running.

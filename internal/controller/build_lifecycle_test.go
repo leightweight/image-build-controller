@@ -641,9 +641,12 @@ var _ = Describe("Build lifecycle with a running manager", Ordered, func() {
 		setJobFinished(ctx, job, true, 1)
 
 		// spec.interval is 10 minutes, so only the Job and pod watches can bring this in time.
+		// The patch helper writes the conditions and the rest of the status in separate requests,
+		// so wait for both.
 		Eventually(func() *buildv1alpha1.ImageBuild { return getImageBuild(ctx, ib) }).WithContext(ctx).
-			Should(haveCondition(meta.ReadyCondition, metav1.ConditionTrue, meta.SucceededReason))
-		Expect(getImageBuild(ctx, ib).Status.LatestImage).To(Equal("registry.example/app@" + testDigest))
+			Should(And(
+				haveCondition(meta.ReadyCondition, metav1.ConditionTrue, meta.SucceededReason),
+				HaveField("Status.LatestImage", "registry.example/app@"+testDigest)))
 		Eventually(func() bool { return hasFinalizer(ctx, pod) }).WithContext(ctx).Should(BeFalse(),
 			"the pod is released, so its deletion completes")
 	}, SpecTimeout(30*time.Second))

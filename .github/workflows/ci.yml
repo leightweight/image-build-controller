@@ -7,6 +7,12 @@ on:
 
 permissions: {}
 
+# A new push to a pull request cancels its older run.
+# Runs on main always finish, so each merge gets its own result.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   lint:
     name: Lint

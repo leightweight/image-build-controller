@@ -9,19 +9,19 @@ Flux image automation picks up the new tag from there.
 
 ```mermaid
 flowchart LR
-    subgraph source[Flux source-controller]
+    subgraph source[Flux source]
         direction TB
         git[Git repository] --> gitrepo[GitRepository]
     end
     subgraph build[image-build-controller]
         direction TB
-        imagebuild[ImageBuild] --> pod[Build pod]
+        imagebuild[ImageBuild] --> pod[Build pod] --> registry[Registry]
     end
     subgraph deploy[Flux image automation]
         direction TB
-        policy[ImageRepository and ImagePolicy] --> automation[ImageUpdateAutomation]
+        policy[ImagePolicy] --> automation[ImageUpdateAutomation]
     end
-    source --> build --> registry[Registry] --> deploy
+    source --> build --> deploy
 ```
 
 Builds run as Kubernetes Jobs with rootless [BuildKit](https://github.com/moby/buildkit).

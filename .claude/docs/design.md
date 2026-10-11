@@ -433,9 +433,7 @@ Build pods mount the registry Secret directly.
   It defaults to the controller's own image, which the controller reads from its pod at startup through the `POD_NAMESPACE` and `POD_NAME` environment variables that the Deployment sets with the downward API.
   That needs no configuration, and the init container always runs the same controller version.
 - `--default-user-namespaces`, the default for `userNamespaces`, which is true.
-- Restricting the controller to a single namespace.
 - `--no-cross-namespace-refs`, which rejects `sourceRef`s in other namespaces, as Flux does.
-- An optional notification-controller events address.
 
 ## Implementation
 
@@ -516,6 +514,8 @@ Its specs check that:
   The author already uses Flux notifications, so this comes first after v1.
   The `Alert` API may restrict event source kinds, so this needs verification.
   For v1, the controller emits standard Kubernetes Events only.
+  It needs a controller flag for the notification-controller events address.
+- A controller flag that restricts the controller to a single namespace.
 - Build secrets (`--secret`).
 - Multi-arch image builds.
 - Additional build backends.

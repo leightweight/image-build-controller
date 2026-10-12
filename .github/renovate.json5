@@ -55,8 +55,10 @@
       matchFileNames: ['test/**'],
     },
     {
+      // Only tests use these, so their updates aren't fixes for users.
       groupName: 'Ginkgo and Gomega',
       matchPackageNames: ['github.com/onsi/ginkgo/v2', 'github.com/onsi/gomega'],
+      semanticCommitType: 'chore',
     },
     {
       // The mise Go version and the Dockerfile builder image move together.

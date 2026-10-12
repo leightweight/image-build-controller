@@ -1,0 +1,93 @@
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: [
+    'config:recommended',
+    // PR titles follow Conventional Commits, because release notes come from them.
+    ':semanticCommits',
+    'schedule:weekly',
+  ],
+  // Wait for a release to settle before proposing it, in case it's pulled or compromised.
+  minimumReleaseAge: '3 days',
+  internalChecksFilter: 'strict',
+  postUpdateOptions: ['gomodTidy'],
+  // config:recommended ignores test directories, but the e2e tests pin images too.
+  ignorePaths: [],
+  kubernetes: {
+    // The e2e tests deploy these manifests on kind.
+    managerFilePatterns: ['/^test/e2e/testdata/.+\\.yaml$/'],
+  },
+  customManagers: [
+    {
+      // Image constants in Go code, such as DefaultBuildKitImage.
+      // Add a file here when it gets a new pinned image constant.
+      customType: 'regex',
+      managerFilePatterns: ['/^internal/build/build\\.go$/', '/^test/e2e/helpers_test\\.go$/'],
+      matchStrings: ['Image\\s*=\\s*"(?<depName>[a-z0-9./-]+):(?<currentValue>[^"@]+)"'],
+      datasourceTemplate: 'docker',
+    },
+    {
+      // The golangci-lint version that builds the custom binary must match mise's.
+      customType: 'regex',
+      managerFilePatterns: ['/^\\.custom-gcl\\.yml$/'],
+      matchStrings: ['(?m)^version: (?<currentValue>\\S+)'],
+      depNameTemplate: 'golangci-lint',
+      packageNameTemplate: 'golangci/golangci-lint',
+      datasourceTemplate: 'github-tags',
+    },
+    {
+      // golangci-lint module plugins.
+      customType: 'regex',
+      managerFilePatterns: ['/^\\.custom-gcl\\.yml$/'],
+      matchStrings: ['module: "(?<depName>[^"]+)"\\s+import: "[^"]+"\\s+version: (?<currentValue>\\S+)'],
+      datasourceTemplate: 'go',
+    },
+  ],
+  packageRules: [
+    // Later rules override earlier ones, so the broad groups come first.
+    {
+      // Development tools don't ship to users, so their minor and patch updates share one weekly pull request.
+      groupName: 'development tools',
+      matchFileNames: ['.config/mise/config.toml', '.custom-gcl.yml', '.github/workflows/**'],
+      matchUpdateTypes: ['minor', 'patch', 'digest'],
+    },
+    {
+      groupName: 'end-to-end test images',
+      matchFileNames: ['test/**'],
+    },
+    {
+      groupName: 'Ginkgo and Gomega',
+      matchPackageNames: ['github.com/onsi/ginkgo/v2', 'github.com/onsi/gomega'],
+    },
+    {
+      // The mise Go version and the Dockerfile builder image move together.
+      groupName: 'Go',
+      matchPackageNames: ['golang/go', 'golang'],
+    },
+    {
+      groupName: 'Kubernetes Go modules',
+      matchDatasources: ['go'],
+      matchPackageNames: ['k8s.io/**', 'sigs.k8s.io/controller-runtime'],
+    },
+    {
+      groupName: 'Flux Go modules',
+      matchDatasources: ['go'],
+      matchPackageNames: ['github.com/fluxcd/**'],
+    },
+    {
+      // go.mod repeats Flux's replace for go-digest; keep it the same as kustomize-controller's by hand.
+      matchManagers: ['gomod'],
+      matchDepTypes: ['replace'],
+      enabled: false,
+    },
+    {
+      // Pin base images by digest so a moved tag shows up as a pull request.
+      matchManagers: ['dockerfile'],
+      pinDigests: true,
+    },
+    {
+      // These ship to users, so they belong in the release notes as fixes.
+      matchPackageNames: ['moby/buildkit', 'gcr.io/distroless/static'],
+      semanticCommitType: 'fix',
+    },
+  ],
+}

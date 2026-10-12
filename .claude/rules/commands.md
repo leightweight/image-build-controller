@@ -59,3 +59,6 @@ Linter configuration lives in `.config/hk.pkl`, `.config/rumdl.toml`, `.golangci
 The `helm` step in `.config/hk.pkl` runs `helm lint --strict` on the chart, and the `goreleaser` step runs `goreleaser check`.
 The release configuration lives in `.goreleaser.yaml` and `Dockerfile.release`.
 When you change the golangci-lint version in `[tools]`, change `version` in `.custom-gcl.yml` to match.
+
+`.github/renovate.json5` configures Renovate, which opens dependency update pull requests weekly.
+When you pin a new image in Go code, name the constant with an `Image` suffix and add its file to the Go image manager in that config.

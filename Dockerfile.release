@@ -2,7 +2,7 @@
 # goreleaser cross-compiles the manager and puts each binary in the build context under <os>/<arch>/,
 # so this Dockerfile only copies it and needs no emulation for other platforms.
 # The Dockerfile at the repo root builds the manager from source for development and the end-to-end tests.
-FROM gcr.io/distroless/static:nonroot
+FROM gcr.io/distroless/static:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3
 ARG TARGETPLATFORM
 WORKDIR /
 COPY ${TARGETPLATFORM}/manager /manager

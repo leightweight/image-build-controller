@@ -177,6 +177,12 @@ A new commit or a spec change starts a new build, and so does Flux's `reconcile.
 kubectl annotate imagebuild app -n apps --overwrite reconcile.fluxcd.io/requestedAt="$(date +%s)"
 ```
 
+Each build runs as a Job named `<name>-build-<hash>` in the namespace of its `ImageBuild`.
+Finished build pods stay in `Completed` or `Error` until the controller deletes their Job, so `kubectl logs` still shows the build log.
+Like a `CronJob`, the controller keeps the Jobs of the last successful build and the last 3 failed builds, and deletes older ones after each build.
+To keep more or fewer, set `successfulBuildsHistoryLimit` and `failedBuildsHistoryLimit`.
+A limit of 0 deletes each Job as soon as the controller records its result.
+
 [`imagebuild_types.go`](api/v1alpha1/imagebuild_types.go) documents every field, including build arguments, multi-stage targets, the build cache, concurrency, and build pod scheduling.
 
 ## Deploy with Flux image automation

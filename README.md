@@ -61,23 +61,26 @@ If source-controller runs elsewhere, set `sourceControllerNetworkPolicy.namespac
 The chart's [`values.yaml`](charts/chart/values.yaml) lists the other settings.
 Controller flags, such as `--default-user-namespaces=false`, go in `manager.args`.
 
-Each release also has an `install.yaml` that installs the controller with default settings and without the NetworkPolicy:
+Each release also has an `install.yaml` that installs the controller with default settings and without the NetworkPolicy.
+This URL always points at the latest release:
 
 ```sh
-kubectl apply -f https://github.com/leightweight/image-build-controller/releases/download/v0.1.0/install.yaml
+kubectl apply -f https://github.com/leightweight/image-build-controller/releases/latest/download/install.yaml
 ```
 
 ### Verify the release
 
-The release workflow signs the controller image and the chart with [cosign](https://github.com/sigstore/cosign), using its GitHub Actions identity instead of a key:
+The release workflow signs the controller image and the chart with [cosign](https://github.com/sigstore/cosign), using its GitHub Actions identity instead of a key.
+Set `version` to the release you installed, without the leading `v`:
 
 ```sh
-cosign verify ghcr.io/leightweight/image-build-controller:0.1.0 \
+version=0.2.0
+cosign verify "ghcr.io/leightweight/image-build-controller:$version" \
   --certificate-identity-regexp '^https://github.com/leightweight/image-build-controller/.github/workflows/release.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-The same command verifies the chart at `ghcr.io/leightweight/charts/image-build-controller:0.1.0`.
+The same command verifies the chart at `ghcr.io/leightweight/charts/image-build-controller:$version`.
 
 ## Prepare a build namespace
 

@@ -104,10 +104,11 @@ printf '%s' "$digest" > /dev/termination-log
 `
 
 // JobName returns the name of the build Job for an ImageBuild and build key.
-// It has the form <name>-<key prefix>, with the ImageBuild name shortened so the whole name fits in 63 characters,
-// and dots replaced with hyphens so pod hostnames stay valid.
+// It has the form <name>-build-<key prefix>, so build pods don't look like the pods of the app they build.
+// The ImageBuild name is shortened so the whole name fits in 63 characters,
+// and dots become hyphens so pod hostnames stay valid.
 func JobName(imageBuildName, key string) string {
-	suffix := "-" + KeyPrefix(key)
+	suffix := "-build-" + KeyPrefix(key)
 	base := strings.ReplaceAll(imageBuildName, ".", "-")
 	if max := maxJobNameLength - len(suffix); len(base) > max {
 		base = strings.TrimRight(base[:max], "-")

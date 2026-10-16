@@ -170,7 +170,7 @@ var _ = Describe("Job", func() {
 		It("is valid", func() { expectValid(job) })
 
 		It("names, labels, and owns the Job", func() {
-			Expect(job.Name).To(Equal("app-0123456789"))
+			Expect(job.Name).To(Equal("app-build-0123456789"))
 			Expect(job.Namespace).To(Equal("default"))
 			Expect(job.Labels).To(HaveKeyWithValue(ManagedByLabel, ManagedByValue))
 			Expect(job.Spec.Template.Labels).To(HaveKeyWithValue(ManagedByLabel, ManagedByValue))
@@ -497,24 +497,24 @@ var _ = Describe("Job", func() {
 })
 
 var _ = Describe("JobName", func() {
-	It("adds the key prefix to the ImageBuild name", func() {
-		Expect(JobName(testName, testKey)).To(Equal("app-0123456789"))
+	It("adds build and the key prefix to the ImageBuild name", func() {
+		Expect(JobName(testName, testKey)).To(Equal("app-build-0123456789"))
 	})
 
 	It("replaces dots so pod hostnames stay valid", func() {
-		Expect(JobName("app.v2", testKey)).To(Equal("app-v2-0123456789"))
+		Expect(JobName("app.v2", testKey)).To(Equal("app-v2-build-0123456789"))
 	})
 
 	It("shortens long names to 63 characters and keeps the key prefix", func() {
 		name := JobName(strings.Repeat("a", 253), testKey)
 		Expect(name).To(HaveLen(63))
-		Expect(name).To(HaveSuffix("-0123456789"))
+		Expect(name).To(HaveSuffix("-build-0123456789"))
 		Expect(validation.IsDNS1123Label(name)).To(BeEmpty())
 	})
 
 	It("doesn't leave a hyphen where it shortens the name", func() {
-		name := JobName(strings.Repeat("a", 51)+"-"+strings.Repeat("b", 20), testKey)
-		Expect(name).To(Equal(strings.Repeat("a", 51) + "-0123456789"))
+		name := JobName(strings.Repeat("a", 45)+"-"+strings.Repeat("b", 20), testKey)
+		Expect(name).To(Equal(strings.Repeat("a", 45) + "-build-0123456789"))
 		Expect(validation.IsDNS1123Label(name)).To(BeEmpty())
 	})
 

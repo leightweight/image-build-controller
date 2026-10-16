@@ -262,7 +262,7 @@ Like the Flux controllers, the controller builds from the source's last artifact
 ### Build Job
 
 Each build is a Job in the `ImageBuild` namespace, with a controller owner reference to the `ImageBuild`.
-The Job name is `<name>-<first 10 characters of the build key>`.
+The Job name is `<name>-build-<first 10 characters of the build key>`, so build pods don't look like the pods of the app they build.
 The `ImageBuild` name is shortened so the whole Job name fits in 63 characters, because the Job controller uses the name as a label value, and dots become hyphens so pod hostnames stay valid.
 After a restart, the controller finds and adopts a running Job for the current build key instead of creating a duplicate.
 

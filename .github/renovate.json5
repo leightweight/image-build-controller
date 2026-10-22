@@ -4,8 +4,10 @@
     'config:recommended',
     // PR titles follow Conventional Commits, because release notes come from them.
     ':semanticCommits',
-    'schedule:weekly',
   ],
+  // Any time on Monday, UTC.
+  // Renovate opens at most 2 pull requests an hour, so the 4-hour window of schedule:weekly left some for the next week.
+  schedule: ['* * * * 1'],
   // Wait for a release to settle before proposing it, in case it's pulled or compromised.
   minimumReleaseAge: '3 days',
   internalChecksFilter: 'strict',
@@ -62,8 +64,10 @@
     },
     {
       // The mise Go version and the Dockerfile builder image move together.
+      // goreleaser builds the release binaries with the mise Go, so its updates ship to users as fixes.
       groupName: 'Go',
       matchPackageNames: ['golang/go', 'golang'],
+      semanticCommitType: 'fix',
     },
     {
       groupName: 'Kubernetes Go modules',

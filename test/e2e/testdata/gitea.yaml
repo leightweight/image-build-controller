@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
         - name: gitea
-          image: docker.io/gitea/gitea:28.0.0-rootless
+          image: docker.io/gitea/gitea:28.2.0-rootless
           env:
             - name: GITEA__security__INSTALL_LOCK
               value: "true"

@@ -47,6 +47,9 @@ Release notes come from PR titles and descriptions, so write them for a user who
 Lead with the user-visible problem and outcome.
 Show a concrete example, such as YAML or `kubectl` output, when it helps.
 Keep the description in sync with the final diff.
+Write descriptions in normal paragraphs, with each paragraph on one line.
+GitHub shows a single newline in a description as a line break, so the one-sentence-per-line rule for Markdown files doesn't apply.
+The same goes for issues and comments.
 
 ## Pre-commit
 

@@ -175,14 +175,12 @@ func Job(ib *buildv1alpha1.ImageBuild, src *Source, cfg Config, key string, star
 	}
 
 	return &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        JobName(ib.Name, key),
-			Namespace:   ib.Namespace,
-			Labels:      labels,
-			Annotations: jobAnnotations,
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(ib, buildv1alpha1.GroupVersion.WithKind(buildv1alpha1.ImageBuildKind)),
-			},
+		Name:        JobName(ib.Name, key),
+		Namespace:   ib.Namespace,
+		Labels:      labels,
+		Annotations: jobAnnotations,
+		OwnerReferences: []metav1.OwnerReference{
+			*metav1.NewControllerRef(ib, buildv1alpha1.GroupVersion.WithKind(buildv1alpha1.ImageBuildKind)),
 		},
 		Spec: batchv1.JobSpec{
 			BackoffLimit: ib.Spec.BackoffLimit,
@@ -323,10 +321,10 @@ func buildctlArgs(ib *buildv1alpha1.ImageBuild, src *Source, tags []string) []st
 
 func volumes(ib *buildv1alpha1.ImageBuild, userNS bool) []corev1.Volume {
 	vols := []corev1.Volume{
-		{Name: contextVolume, VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
-		{Name: outputVolume, VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
-		{Name: tmpVolume, VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
-		{Name: buildKitVolume, VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+		{Name: contextVolume, EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		{Name: outputVolume, EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		{Name: tmpVolume, EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		{Name: buildKitVolume, EmptyDir: &corev1.EmptyDirVolumeSource{}},
 	}
 	if ib.Spec.Dockerfile.Inline != "" {
 		vols = append(vols, downwardAPIVolume(dockerfileVolume, map[string]string{inlineDockerfileName: dockerfileAnnotation}))
@@ -334,10 +332,10 @@ func volumes(ib *buildv1alpha1.ImageBuild, userNS bool) []corev1.Volume {
 	if ib.Spec.Push.SecretRef != nil {
 		vols = append(vols, corev1.Volume{
 			Name: dockerConfigVolume,
-			VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{
+			Secret: &corev1.SecretVolumeSource{
 				SecretName: ib.Spec.Push.SecretRef.Name,
 				Items:      []corev1.KeyToPath{{Key: corev1.DockerConfigJsonKey, Path: "config.json"}},
-			}},
+			},
 		})
 	}
 	if userNS {
@@ -359,7 +357,7 @@ func downwardAPIVolume(name string, files map[string]string) corev1.Volume {
 		})
 	}
 	return corev1.Volume{
-		Name:         name,
-		VolumeSource: corev1.VolumeSource{DownwardAPI: &corev1.DownwardAPIVolumeSource{Items: items}},
+		Name:        name,
+		DownwardAPI: &corev1.DownwardAPIVolumeSource{Items: items},
 	}
 }

@@ -34,7 +34,7 @@ var keyTime = time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
 
 func keyImageBuild() *buildv1alpha1.ImageBuild {
 	return &buildv1alpha1.ImageBuild{
-		ObjectMeta: metav1.ObjectMeta{Name: testName, Namespace: "apps"},
+		Name: testName, Namespace: "apps",
 		Spec: buildv1alpha1.ImageBuildSpec{
 			SourceRef:  &meta.NamespacedObjectKindReference{Kind: "GitRepository", Name: testName},
 			Dockerfile: buildv1alpha1.Dockerfile{Path: dockerfilePath},

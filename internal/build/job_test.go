@@ -58,7 +58,7 @@ var (
 
 func sourceImageBuild() *buildv1alpha1.ImageBuild {
 	return &buildv1alpha1.ImageBuild{
-		ObjectMeta: metav1.ObjectMeta{Name: testName, Namespace: "default", UID: "uid-1", Generation: 2},
+		Name: testName, Namespace: "default", UID: "uid-1", Generation: 2,
 		Spec: buildv1alpha1.ImageBuildSpec{
 			SourceRef:    &meta.NamespacedObjectKindReference{Kind: "GitRepository", Name: testName},
 			Dockerfile:   buildv1alpha1.Dockerfile{Path: dockerfilePath},
@@ -283,10 +283,10 @@ var _ = Describe("Job", func() {
 			}))
 			Expect(job.Spec.Template.Spec.Volumes).To(ContainElement(corev1.Volume{
 				Name: "docker-config",
-				VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{
+				Secret: &corev1.SecretVolumeSource{
 					SecretName: testSecret,
 					Items:      []corev1.KeyToPath{{Key: ".dockerconfigjson", Path: "config.json"}},
-				}},
+				},
 			}))
 		})
 
@@ -362,11 +362,11 @@ var _ = Describe("Job", func() {
 			}))
 			Expect(job.Spec.Template.Spec.Volumes).To(ContainElement(corev1.Volume{
 				Name: "dockerfile",
-				VolumeSource: corev1.VolumeSource{DownwardAPI: &corev1.DownwardAPIVolumeSource{
+				DownwardAPI: &corev1.DownwardAPIVolumeSource{
 					Items: []corev1.DownwardAPIVolumeFile{{Path: dockerfilePath, FieldRef: &corev1.ObjectFieldSelector{
 						FieldPath: "metadata.annotations['build.fluxcd.leightweight.io/dockerfile']",
 					}}},
-				}},
+				},
 			}))
 		})
 	})

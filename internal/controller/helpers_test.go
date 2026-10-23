@@ -66,13 +66,11 @@ func onlyJob(ctx context.Context, namespace string) *batchv1.Job {
 // addPod creates a build pod for a Job, with the template's labels and finalizer, the way the Job controller does.
 func addPod(ctx context.Context, job *batchv1.Job) *corev1.Pod {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace:       job.Namespace,
-			GenerateName:    job.Name + "-",
-			Labels:          job.Spec.Template.Labels,
-			Finalizers:      job.Spec.Template.Finalizers,
-			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(job, batchv1.SchemeGroupVersion.WithKind("Job"))},
-		},
+		Namespace:       job.Namespace,
+		GenerateName:    job.Name + "-",
+		Labels:          job.Spec.Template.Labels,
+		Finalizers:      job.Spec.Template.Finalizers,
+		OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(job, batchv1.SchemeGroupVersion.WithKind("Job"))},
 		Spec: corev1.PodSpec{
 			RestartPolicy: corev1.RestartPolicyNever,
 			Containers:    []corev1.Container{{Name: build.BuildContainerName, Image: testPodImage}},

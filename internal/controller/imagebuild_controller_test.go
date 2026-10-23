@@ -24,7 +24,6 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -55,7 +54,7 @@ var testNow = time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
 
 // newNamespace creates a namespace with a generated name, so each test works in isolation.
 func newNamespace(ctx context.Context) string {
-	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "imagebuild-test-"}}
+	ns := &corev1.Namespace{GenerateName: "imagebuild-test-"}
 	Expect(k8sClient.Create(ctx, ns)).To(Succeed())
 	return ns.Name
 }
@@ -63,7 +62,7 @@ func newNamespace(ctx context.Context) string {
 // newGitRepository creates a GitRepository, and gives it an artifact when revision is set.
 func newGitRepository(ctx context.Context, namespace, name, revision string) *sourcev1.GitRepository {
 	repo := &sourcev1.GitRepository{
-		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name},
+		Namespace: namespace, Name: name,
 		Spec: sourcev1.GitRepositorySpec{
 			URL:      "https://example.invalid/app.git",
 			Interval: metav1.Duration{Duration: time.Minute},
@@ -92,7 +91,7 @@ func setArtifact(ctx context.Context, repo *sourcev1.GitRepository, revision str
 func newImageBuild(ctx context.Context, namespace string, sourceRef *meta.NamespacedObjectKindReference,
 	mutate ...func(*buildv1alpha1.ImageBuild)) *buildv1alpha1.ImageBuild {
 	ib := &buildv1alpha1.ImageBuild{
-		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "app"},
+		Namespace: namespace, Name: "app",
 		Spec: buildv1alpha1.ImageBuildSpec{
 			SourceRef: sourceRef,
 			Push:      buildv1alpha1.Push{Image: "registry.example/app"},
@@ -160,7 +159,7 @@ var _ = Describe("ImageBuildReconciler", func() {
 
 	It("ignores an ImageBuild that doesn't exist", func() {
 		result, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Namespace: namespace, Name: "missing"},
+			Namespace: namespace, Name: "missing",
 		})
 
 		Expect(err).NotTo(HaveOccurred())

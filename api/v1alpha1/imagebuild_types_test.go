@@ -40,10 +40,8 @@ const inlineDockerfile = "FROM alpine"
 // newImageBuild returns a valid ImageBuild that builds Dockerfile from a GitRepository.
 func newImageBuild() *buildv1alpha1.ImageBuild {
 	return &buildv1alpha1.ImageBuild{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: "test-",
-			Namespace:    "default",
-		},
+		GenerateName: "test-",
+		Namespace:    "default",
 		Spec: buildv1alpha1.ImageBuildSpec{
 			SourceRef: &meta.NamespacedObjectKindReference{
 				Kind:      "GitRepository",
@@ -293,7 +291,7 @@ var _ = Describe("ImageBuild API", func() {
 			ib := createAndGet(newImageBuild())
 			started := metav1.NewTime(time.Now().Truncate(time.Second))
 			ib.Status = buildv1alpha1.ImageBuildStatus{
-				ReconcileRequestStatus: meta.ReconcileRequestStatus{LastHandledReconcileAt: "2026-10-10T00:00:00Z"},
+				LastHandledReconcileAt: "2026-10-10T00:00:00Z",
 				ObservedGeneration:     ib.Generation,
 				Conditions: []metav1.Condition{{
 					Type:               meta.ReadyCondition,

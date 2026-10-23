@@ -569,7 +569,7 @@ var _ = Describe("ResolveOwnImage", func() {
 	BeforeEach(func() {
 		namespace = newNamespace(context.Background())
 		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "controller"},
+			Namespace: namespace, Name: "controller",
 			Spec: corev1.PodSpec{Containers: []corev1.Container{
 				{Name: "sidecar", Image: testPodImage},
 				{Name: "manager", Image: "ghcr.io/leightweight/image-build-controller:v1.0.0"},

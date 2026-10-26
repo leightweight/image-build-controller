@@ -19,7 +19,7 @@ limitations under the License.
 package build
 
 // DefaultBuildKitImage is the rootless BuildKit image each controller release pins.
-const DefaultBuildKitImage = "moby/buildkit:v0.34.0-rootless"
+const DefaultBuildKitImage = "moby/buildkit:v0.34.1-rootless"
 
 // Config holds the controller-wide settings that shape build Jobs.
 type Config struct {

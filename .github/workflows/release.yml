@@ -23,9 +23,9 @@ jobs:
           # goreleaser needs the tags to find the previous release.
           fetch-depth: 0
           persist-credentials: false
-      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
-          version: 2026.10.18
+          version: 2026.11.0
           # Tag builds can read caches that runs on main wrote, so a poisoned cache could put files into a signed release.
           cache: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1

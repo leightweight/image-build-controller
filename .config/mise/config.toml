@@ -5,7 +5,7 @@ experimental = true
 [tools]
 cosign = "3.1.4"
 flux2 = "2.9.6"
-go = "1.27.3"
+go = "1.27.4"
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "0.23.0"
 golangci-lint = "2.15.0"
 goreleaser = "2.19.0"
